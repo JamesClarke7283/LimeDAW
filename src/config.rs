@@ -82,6 +82,10 @@ pub struct Settings {
     pub show_browser: bool,
     /// Keep the instrument panel open.
     pub show_instrument_panel: bool,
+    /// Keep the effects dock along the bottom open.
+    pub show_effects_dock: bool,
+    /// How tall that dock is, in pixels.
+    pub effects_dock_height: f32,
     /// Default velocity for notes drawn in the piano roll.
     pub default_velocity: f32,
     /// The soundfont to load at start-up.
@@ -119,8 +123,10 @@ impl Default for Settings {
             ui_scale: 1.0,
             show_browser: true,
             show_instrument_panel: true,
+            show_effects_dock: true,
+            effects_dock_height: 250.0,
             default_velocity: 0.78,
-            buffer_frames: 1024,
+            buffer_frames: 2048,
             recent_projects: Vec::new(),
         }
     }
@@ -130,11 +136,12 @@ impl Settings {
     pub fn sanitise(&mut self) {
         self.ui_scale = self.ui_scale.clamp(0.6, 2.5);
         self.default_velocity = self.default_velocity.clamp(0.05, 1.0);
+        self.effects_dock_height = self.effects_dock_height.clamp(120.0, 620.0);
         if !(1.0 / 64.0..=8.0).contains(&self.grid_snap) {
             self.grid_snap = 0.25;
         }
         if !BUFFER_SIZES.contains(&self.buffer_frames) {
-            self.buffer_frames = 1024;
+            self.buffer_frames = 2048;
         }
         self.recent_projects.truncate(12);
     }

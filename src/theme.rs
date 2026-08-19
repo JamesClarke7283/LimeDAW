@@ -386,6 +386,59 @@ pub fn button_danger(theme: &Theme, status: button::Status) -> button::Style {
     }
 }
 
+/// The surface a dropdown menu is drawn on.
+pub fn menu_panel(theme: &Theme) -> container::Style {
+    let p = palette(theme);
+    container::Style {
+        background: Some(Background::Color(p.surface_high)),
+        text_color: Some(p.text),
+        border: Border {
+            color: p.border_strong,
+            width: 1.0,
+            radius: border::radius(6),
+        },
+        shadow: Shadow {
+            color: Color {
+                a: if p.is_dark { 0.55 } else { 0.22 },
+                ..Color::BLACK
+            },
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 16.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+/// A row inside a dropdown menu.
+pub fn button_menu_item(theme: &Theme, status: button::Status) -> button::Style {
+    let p = palette(theme);
+    let bg = match status {
+        button::Status::Hovered => Color {
+            a: 0.16,
+            ..p.accent
+        },
+        button::Status::Pressed => Color {
+            a: 0.28,
+            ..p.accent
+        },
+        _ => Color::TRANSPARENT,
+    };
+    button::Style {
+        background: Some(Background::Color(bg)),
+        text_color: if matches!(status, button::Status::Disabled) {
+            p.text_dim
+        } else {
+            p.text
+        },
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: border::radius(4),
+        },
+        ..button::Style::default()
+    }
+}
+
 /// A borderless button, for icons and list rows.
 pub fn button_ghost(theme: &Theme, status: button::Status) -> button::Style {
     let p = palette(theme);

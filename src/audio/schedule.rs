@@ -260,7 +260,9 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
 
 /// Everything the audio engine needs, resolved and ready to play.
 pub struct Snapshot {
-    pub schedule: Schedule,
+    /// Shared, because recompiling it is the expensive part of an edit and
+    /// most edits — a knob, a level, an effect parameter — do not change it.
+    pub schedule: std::sync::Arc<Schedule>,
     pub channels: Vec<ChannelSnapshot>,
     pub mixer: Mixer,
     pub tempo: f64,
@@ -276,7 +278,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
-            schedule: Schedule::default(),
+            schedule: std::sync::Arc::new(Schedule::default()),
             channels: Vec::new(),
             mixer: Mixer::default(),
             tempo: 130.0,

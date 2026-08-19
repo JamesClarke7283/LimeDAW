@@ -14,6 +14,14 @@ use crate::theme;
 
 impl LimeDaw {
     pub(crate) fn update_action(&mut self, message: Message) -> Task<Message> {
+        // Choosing anything from a menu dismisses it. Toggling a menu button is
+        // handled below, so it is excluded here.
+        if !matches!(
+            message,
+            Message::ToggleMenu(_) | Message::Tick | Message::Keyboard(_) | Message::McpJob(_)
+        ) {
+            self.open_menu = None;
+        }
         match message {
             Message::Tick | Message::SystemTheme(_) | Message::Keyboard(_) | Message::Noop => {}
 
@@ -74,12 +82,27 @@ impl LimeDaw {
                 } else {
                     self.project.playlist.loop_region = None;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::SetPlayMode(mode) => {
                 self.play_mode = mode;
                 self.engine.send(EngineCmd::SetMode(mode));
+                // A different mode is a different arrangement of the same
+                // notes, so the schedule has to be built again.
+                self.schedule_dirty = true;
                 self.needs_sync = true;
+                // Song mode belongs with the song editor, pattern mode with
+                // the rack — switch so the transport and the view agree.
+                self.view = match mode {
+                    PlayMode::Song => MainView::Playlist,
+                    PlayMode::Pattern(_) => {
+                        if self.view == MainView::Playlist {
+                            MainView::Channels
+                        } else {
+                            self.view
+                        }
+                    }
+                };
             }
             Message::SetMasterVolume(v) => {
                 self.project.master_volume = v.clamp(0.0, 2.0);
@@ -87,7 +110,7 @@ impl LimeDaw {
             }
             Message::SetSwing(v) => {
                 self.project.swing = v.clamp(0.0, 0.9);
-                self.touch();
+                self.touch_schedule();
             }
             Message::SetTimeSignature(n, d) => {
                 self.project.time_signature = TimeSignature {
@@ -103,6 +126,21 @@ impl LimeDaw {
                 self.forget_effect_chains();
                 self.needs_sync = true;
                 self.note("All notes stopped");
+            }
+
+            // ---- menus -----------------------------------------------
+            Message::ToggleMenu(id) => {
+                self.open_menu = if self.open_menu == Some(id) {
+                    None
+                } else {
+                    Some(id)
+                };
+            }
+            Message::CloseMenu => self.open_menu = None,
+            Message::OpenProjectFolder => return open_folder(crate::paths::projects_dir()),
+            Message::Quit => {
+                let _ = self.settings.save();
+                return iced::exit();
             }
 
             // ---- view -------------------------------------------------
@@ -138,6 +176,55 @@ impl LimeDaw {
             Message::SetUiScale(scale) => {
                 self.settings.ui_scale = scale.clamp(0.6, 2.5);
                 let _ = self.settings.save();
+            }
+            Message::FocusEffects(host) => {
+                self.fx_focus = host;
+                self.settings.show_effects_dock = true;
+                if let FxHost::MixerTrack(track) = host {
+                    self.selected_mixer_track = track.min(self.project.mixer.tracks.len() - 1);
+                }
+            }
+            Message::ToggleEffectsDock => {
+                self.settings.show_effects_dock = !self.settings.show_effects_dock;
+                let _ = self.settings.save();
+            }
+            Message::SetEffectsDockHeight(height) => {
+                self.settings.effects_dock_height = height.clamp(120.0, 620.0);
+                let _ = self.settings.save();
+            }
+            Message::RouteChannelToNewInsert(id) => {
+                // Find an insert nothing is using yet, the way LMMS hands out
+                // the next free FX channel.
+                let used: Vec<usize> = self
+                    .project
+                    .channels
+                    .iter()
+                    .map(|c| c.mixer_track)
+                    .collect();
+                let free = (1..self.project.mixer.tracks.len()).find(|t| !used.contains(t));
+                match free {
+                    Some(track) => {
+                        let name = self
+                            .project
+                            .channel(id)
+                            .map(|c| c.name.clone())
+                            .unwrap_or_else(|| format!("Insert {track}"));
+                        if let Some(c) = self.project.channel_mut(id) {
+                            c.mixer_track = track;
+                        }
+                        if let Some(t) = self.project.mixer.tracks.get_mut(track) {
+                            t.name = name;
+                        }
+                        self.fx_focus = FxHost::MixerTrack(track);
+                        self.selected_mixer_track = track;
+                        self.touch();
+                        self.note(format!("Routed to insert {track}"));
+                    }
+                    None => self.note("Every mixer insert is in use"),
+                }
+            }
+            Message::SetRackZoom(width) => {
+                self.rack_zoom = width.clamp(4.0, 64.0);
             }
             Message::SetBufferFrames(frames) => {
                 self.settings.buffer_frames = frames;
@@ -225,16 +312,20 @@ impl LimeDaw {
                 if let Some(c) = self.project.channel(id) {
                     self.selected_mixer_track = c.mixer_track;
                 }
+                // Show the channel's own chain, which is what LMMS opens when
+                // you click a track's effects button.
+                self.fx_focus = FxHost::Channel(id);
             }
             Message::AddChannel(kind) => {
                 self.checkpoint();
                 let id = self.add_channel_of(kind);
                 self.selected_channel = Some(id);
-                self.touch();
+                self.touch_schedule();
             }
             Message::RemoveChannel(id) => {
                 self.checkpoint();
                 self.project.remove_channel(id);
+                self.schedule_dirty = true;
                 if self.selected_channel == Some(id) {
                     self.selected_channel = self.project.channels.first().map(|c| c.id);
                 }
@@ -262,13 +353,13 @@ impl LimeDaw {
                 if let Some(c) = self.project.channel_mut(id) {
                     c.muted = !c.muted;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::ToggleChannelSolo(id) => {
                 if let Some(c) = self.project.channel_mut(id) {
                     c.solo = !c.solo;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::SetChannelMixerTrack(id, track) => {
                 let max = self.project.mixer.tracks.len().saturating_sub(1);
@@ -380,7 +471,7 @@ impl LimeDaw {
                     if target >= 0 && (target as usize) < self.project.channels.len() {
                         self.checkpoint();
                         self.project.channels.swap(index, target as usize);
-                        self.touch();
+                        self.touch_schedule();
                     }
                 }
             }
@@ -394,7 +485,7 @@ impl LimeDaw {
                     let index = self.project.channel_index(id).unwrap_or(0);
                     self.project.channels.insert(index + 1, clone);
                     self.selected_channel = Some(new_id);
-                    self.touch();
+                    self.touch_schedule();
                 }
             }
 
@@ -405,6 +496,7 @@ impl LimeDaw {
                     self.play_mode = PlayMode::Pattern(id);
                     self.engine.send(EngineCmd::SetMode(self.play_mode));
                 }
+                self.schedule_dirty = true;
                 self.needs_sync = true;
             }
             Message::AddPattern => {
@@ -416,7 +508,7 @@ impl LimeDaw {
                     self.play_mode = PlayMode::Pattern(id);
                     self.engine.send(EngineCmd::SetMode(self.play_mode));
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::RemovePattern(id) => {
                 self.checkpoint();
@@ -424,7 +516,7 @@ impl LimeDaw {
                 if self.selected_pattern == Some(id) {
                     self.selected_pattern = self.project.patterns.first().map(|p| p.id);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::RenamePattern(id, name) => {
                 if let Some(p) = self.project.pattern_mut(id) {
@@ -444,7 +536,7 @@ impl LimeDaw {
                     }
                     self.project.patterns.push(clone);
                     self.selected_pattern = Some(new_id);
-                    self.touch();
+                    self.touch_schedule();
                 }
             }
             Message::ClearPattern(id) => {
@@ -452,13 +544,13 @@ impl LimeDaw {
                 if let Some(p) = self.project.pattern_mut(id) {
                     p.notes.clear();
                 }
-                self.touch();
+                self.touch_schedule();
             }
             Message::SetPatternLength(id, length) => {
                 if let Some(p) = self.project.pattern_mut(id) {
                     p.length_override = length;
                 }
-                self.touch();
+                self.touch_schedule();
             }
 
             // ---- editing ----------------------------------------------
@@ -585,6 +677,9 @@ impl LimeDaw {
             Message::SelectMixerTrack(track) => {
                 self.selected_mixer_track = track.min(self.project.mixer.tracks.len() - 1);
                 self.selected_effect = None;
+                // The dock follows the selection, so clicking a strip shows
+                // its effects without a second click.
+                self.fx_focus = FxHost::MixerTrack(self.selected_mixer_track);
             }
             Message::SetMixerVolume(track, v) => {
                 if let Some(t) = self.project.mixer.tracks.get_mut(track) {
@@ -734,6 +829,13 @@ impl LimeDaw {
                         Err(_) => return Task::none(),
                     }
                 };
+                // Rendering is the one tool that takes real time. It goes to a
+                // worker and answers from there, so a client asking for a
+                // render does not freeze the interface for everyone else.
+                #[cfg(not(target_arch = "wasm32"))]
+                if tool == "export_wav" {
+                    return self.export_wav_for_mcp(job, &args);
+                }
                 let result = self.handle_mcp_tool(&tool, &args);
                 crate::app::respond(job, result);
             }
@@ -799,6 +901,8 @@ impl LimeDaw {
         self.engine.send(EngineCmd::Stop);
         self.engine.send(EngineCmd::SetMode(self.play_mode));
         self.forget_effect_chains();
+        self.last_schedule = None;
+        self.schedule_dirty = true;
         self.needs_sync = true;
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -1003,7 +1107,7 @@ impl LimeDaw {
             });
         }
         crate::audio::Snapshot {
-            schedule: compiled,
+            schedule: std::sync::Arc::new(compiled),
             channels,
             mixer: self.project.mixer.clone(),
             tempo: self.project.tempo,
@@ -1047,6 +1151,74 @@ impl LimeDaw {
         }
         out
     }
+}
+
+/// Render on a worker thread and resolve when the file is on disk.
+///
+/// Rendering is CPU-bound; doing it inline would freeze the interface for as
+/// long as the song is, which is exactly what an export should not do.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn render_on_worker(
+    snapshot: Arc<crate::audio::Snapshot>,
+    synths: Vec<(usize, Box<rustysynth::Synthesizer>)>,
+    sample_rate: f32,
+    length_beats: f64,
+    tail_seconds: f32,
+    path: PathBuf,
+    progress: Arc<crate::audio::RenderProgress>,
+) -> impl std::future::Future<Output = Message> + Send + 'static {
+    let (tx, rx) = iced::futures::channel::oneshot::channel();
+    std::thread::Builder::new()
+        .name("limedaw-render".into())
+        .spawn(move || {
+            let samples = crate::audio::render_offline_with_progress(
+                snapshot,
+                synths,
+                sample_rate,
+                length_beats,
+                tail_seconds,
+                Some(&progress),
+            );
+            let result = crate::persist::write_wav(&path, &samples, sample_rate as u32)
+                .map(|_| crate::paths::display(&path))
+                .map_err(|e| e.to_string());
+            let _ = tx.send(result);
+        })
+        .expect("spawning the render thread");
+
+    async move {
+        match rx.await {
+            Ok(result) => Message::ExportFinished(result),
+            Err(_) => Message::ExportFinished(Err("the render was interrupted".into())),
+        }
+    }
+}
+
+/// Show a folder in the platform's file manager.
+#[cfg(not(target_arch = "wasm32"))]
+fn open_folder(path: PathBuf) -> Task<Message> {
+    let _ = std::fs::create_dir_all(&path);
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "explorer"
+    } else {
+        "xdg-open"
+    };
+    let display = crate::paths::display(&path);
+    match std::process::Command::new(opener).arg(&path).spawn() {
+        Ok(_) => Task::done(Message::SetStatus(format!("Opened {display}"))),
+        Err(err) => Task::done(Message::SetStatus(format!(
+            "Could not open {display}: {err}"
+        ))),
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn open_folder(_path: PathBuf) -> Task<Message> {
+    Task::done(Message::SetStatus(
+        "There is no file manager in the browser".into(),
+    ))
 }
 
 /// Strip anything that has no business in a filename.

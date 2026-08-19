@@ -59,7 +59,7 @@ impl LimeDaw {
                 self.piano_roll.selection = vec![id];
                 self.engine.resume();
                 self.preview(channel_id, key);
-                self.touch();
+                self.touch_schedule();
             }
             piano_roll::Action::DragNewNote { end } => {
                 if let Some(id) = self.piano_roll.last_created {
@@ -68,7 +68,7 @@ impl LimeDaw {
                     {
                         note.length = (end - note.start).max(1.0 / 64.0);
                     }
-                    self.touch();
+                    self.touch_schedule();
                 }
             }
             piano_roll::Action::SetPositions(updates) => {
@@ -89,7 +89,7 @@ impl LimeDaw {
                     self.release_all_previews();
                     self.preview(channel_id, key);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             piano_roll::Action::SetLength(updates) => {
                 if let Some(pattern) = self.project.pattern_mut(pattern_id) {
@@ -99,7 +99,7 @@ impl LimeDaw {
                         }
                     }
                 }
-                self.touch();
+                self.touch_schedule();
             }
             piano_roll::Action::Delete(ids) => {
                 self.checkpoint();
@@ -107,7 +107,7 @@ impl LimeDaw {
                     pattern.notes.retain(|n| !ids.contains(&n.id));
                 }
                 self.piano_roll.selection.retain(|id| !ids.contains(id));
-                self.touch();
+                self.touch_schedule();
             }
             piano_roll::Action::SetVelocity(updates) => {
                 if let Some(pattern) = self.project.pattern_mut(pattern_id) {
@@ -117,7 +117,7 @@ impl LimeDaw {
                         }
                     }
                 }
-                self.touch();
+                self.touch_schedule();
             }
             piano_roll::Action::Preview(key) => {
                 self.release_all_previews();
@@ -177,7 +177,7 @@ impl LimeDaw {
                 if let Some(pattern) = self.project.pattern_mut(pattern_id) {
                     pattern.remove_note(id);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             (None, true) => {
                 let id = self.project.next_id();
@@ -203,7 +203,7 @@ impl LimeDaw {
                 self.selected_channel = Some(channel);
                 self.engine.resume();
                 self.preview_briefly(channel, key);
-                self.touch();
+                self.touch_schedule();
             }
             _ => {}
         }
@@ -229,29 +229,39 @@ impl LimeDaw {
                     return Task::none();
                 };
                 self.checkpoint();
+                // Rows are created as they are used, so the editor never runs
+                // out of them.
+                while self.project.playlist.tracks.len() <= track {
+                    let index = self.project.playlist.tracks.len();
+                    self.project.playlist.tracks.push(PlaylistTrack::new(index));
+                }
                 let length = self.project.pattern_length_beats(pattern_id);
                 let id = self.project.add_clip(track, pattern_id, start, length);
                 self.playlist.selection = vec![id];
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::SetClip { id, track, start } => {
+                while self.project.playlist.tracks.len() <= track {
+                    let index = self.project.playlist.tracks.len();
+                    self.project.playlist.tracks.push(PlaylistTrack::new(index));
+                }
                 if let Some(clip) = self.project.playlist.clip_mut(id) {
                     clip.track = track;
                     clip.start = start.max(0.0);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::SetClipLength { id, length } => {
                 if let Some(clip) = self.project.playlist.clip_mut(id) {
                     clip.length = length.max(0.25);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::Delete(id) => {
                 self.checkpoint();
                 self.project.playlist.remove_clip(id);
                 self.playlist.selection.retain(|c| *c != id);
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::Select(ids) => self.playlist.selection = ids,
             playlist::Action::BeginClipDrag { clip, pattern } => {
@@ -260,6 +270,7 @@ impl LimeDaw {
                 if let Some(pattern) = pattern {
                     self.playlist.paint_pattern = Some(pattern);
                     self.selected_pattern = Some(pattern);
+                    self.schedule_dirty = true;
                     self.needs_sync = true;
                 }
             }
@@ -272,21 +283,21 @@ impl LimeDaw {
                 if let Some(track) = self.project.playlist.tracks.get_mut(index) {
                     track.muted = !track.muted;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::ToggleTrackSolo(index) => {
                 if let Some(track) = self.project.playlist.tracks.get_mut(index) {
                     track.solo = !track.solo;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::SetLoop { start, end } => {
                 self.project.playlist.loop_region = Some((start, end.max(start + 0.25)));
-                self.touch();
+                self.touch_schedule();
             }
             playlist::Action::ClearLoop => {
                 self.project.playlist.loop_region = None;
-                self.touch();
+                self.touch_schedule();
             }
         }
         Task::none()
@@ -303,6 +314,7 @@ impl LimeDaw {
                     self.view = crate::app::MainView::PianoRoll;
                     self.play_mode = PlayMode::Pattern(pattern_id);
                     self.engine.send(EngineCmd::SetMode(self.play_mode));
+                    self.schedule_dirty = true;
                     self.needs_sync = true;
                 }
             }
@@ -319,7 +331,7 @@ impl LimeDaw {
                     }
                 }
                 self.automation.visible = true;
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::RemoveLane(index) => {
                 self.checkpoint();
@@ -329,7 +341,7 @@ impl LimeDaw {
                     pattern.automation.remove(index);
                 }
                 self.automation.lane = self.automation.lane.saturating_sub(1);
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::Checkpoint => self.checkpoint(),
             automation::Action::AddPoint { beat, value } => {
@@ -345,7 +357,7 @@ impl LimeDaw {
                     });
                     lane.sort();
                 }
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::MovePoint { index, beat, value } => {
                 // Deliberately not sorted here: the drag is holding this index.
@@ -357,7 +369,7 @@ impl LimeDaw {
                     point.beat = beat.max(0.0);
                     point.value = value.clamp(0.0, 1.0);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::SortLane => {
                 let lane_index = self.automation.lane;
@@ -366,7 +378,7 @@ impl LimeDaw {
                 {
                     lane.sort();
                 }
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::RemovePoint(index) => {
                 self.checkpoint();
@@ -377,7 +389,7 @@ impl LimeDaw {
                 {
                     lane.points.remove(index);
                 }
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::SetCurve { index, curve } => {
                 let lane_index = self.automation.lane;
@@ -387,7 +399,7 @@ impl LimeDaw {
                 {
                     point.curve = curve;
                 }
-                self.touch();
+                self.touch_schedule();
             }
             automation::Action::Seek(beat) => self.engine.send(EngineCmd::Seek(beat)),
         }

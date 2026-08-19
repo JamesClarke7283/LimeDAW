@@ -44,7 +44,7 @@ fn snapshot_of(project: &Project, bank: &SampleBank, mode: PlayMode) -> Arc<Snap
         .collect();
 
     Arc::new(Snapshot {
-        schedule: compiled,
+        schedule: Arc::new(compiled),
         channels,
         mixer: project.mixer.clone(),
         tempo: project.tempo,

@@ -48,7 +48,7 @@ impl MainView {
         match self {
             MainView::Channels => "Channel rack",
             MainView::PianoRoll => "Piano roll",
-            MainView::Playlist => "Playlist",
+            MainView::Playlist => "Song editor",
             MainView::Mixer => "Mixer",
             MainView::Settings => "Settings",
             MainView::Mcp => "MCP",
@@ -67,7 +67,13 @@ impl MainView {
     }
 
     pub fn from_slug(slug: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|v| v.slug() == slug)
+        // "playlist" is the historical name; "song" is what the interface and
+        // LMMS both call it, so both are accepted.
+        match slug {
+            "song" | "song_editor" => Some(MainView::Playlist),
+            "rack" | "beat" => Some(MainView::Channels),
+            other => Self::ALL.into_iter().find(|v| v.slug() == other),
+        }
     }
 }
 
@@ -145,12 +151,21 @@ pub enum Message {
 
     // ---- view ----
     SetView(MainView),
+    ToggleMenu(crate::ui::menu::MenuId),
+    CloseMenu,
+    OpenProjectFolder,
+    Quit,
     ToggleBrowser,
     ToggleInstrumentPanel,
     SetBrowserTab(BrowserTab),
     SetTheme(ThemeChoice),
     SetRenderer(RendererChoice),
     SetUiScale(f32),
+    SetRackZoom(f32),
+    FocusEffects(FxHost),
+    ToggleEffectsDock,
+    SetEffectsDockHeight(f32),
+    RouteChannelToNewInsert(Id),
     SetBufferFrames(u32),
     SetStatus(String),
 
@@ -368,6 +383,12 @@ pub struct LimeDaw {
 
     pub view: MainView,
     pub browser_tab: BrowserTab,
+    /// Which menu is showing its dropdown, if any.
+    pub open_menu: Option<crate::ui::menu::MenuId>,
+    /// Width of one step cell in the channel rack, in pixels.
+    pub rack_zoom: f32,
+    /// Which chain the effects dock along the bottom is showing.
+    pub fx_focus: FxHost,
     pub setup: Setup,
 
     pub selected_channel: Option<Id>,
@@ -404,10 +425,20 @@ pub struct LimeDaw {
     /// The size the window was last told to be. Only the browser build uses
     /// this, to keep the canvas matched to the page.
     pub viewport: iced::Size,
+    /// How far the current export has got, shared with its worker thread.
+    pub render_progress: Arc<crate::audio::RenderProgress>,
 
     pub(crate) undo_stack: Vec<Project>,
     pub(crate) redo_stack: Vec<Project>,
     pub(crate) needs_sync: bool,
+    /// Set when an edit changed what will be played, as opposed to how it
+    /// sounds. Only then is the schedule recompiled.
+    pub(crate) schedule_dirty: bool,
+    /// The schedule last handed to the engine, reused when only parameters
+    /// changed.
+    pub(crate) last_schedule: Option<Arc<crate::audio::Schedule>>,
+    /// When the engine was last given a snapshot, so edits are coalesced.
+    pub(crate) last_sync: Instant,
     pub(crate) sf_signature: Vec<(Id, u16, u16, bool)>,
     /// The effect chains the engine was last given, by slug. Comparing against
     /// this is what lets a processor be built here rather than in the audio
@@ -471,6 +502,9 @@ impl LimeDaw {
             system_dark: theme::system_prefers_dark(),
             view: MainView::Channels,
             browser_tab: BrowserTab::Instruments,
+            open_menu: None,
+            rack_zoom: 26.0,
+            fx_focus: FxHost::MixerTrack(0),
             setup,
             selected_channel,
             selected_pattern,
@@ -495,9 +529,13 @@ impl LimeDaw {
             keyboard_octave: 4,
             clipboard: Vec::new(),
             viewport: iced::Size::new(0.0, 0.0),
+            render_progress: Arc::new(crate::audio::RenderProgress::default()),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             needs_sync: true,
+            schedule_dirty: true,
+            last_schedule: None,
+            last_sync: Instant::now(),
             sf_signature: Vec::new(),
             sent_channel_fx: Vec::new(),
             sent_mixer_fx: Vec::new(),
@@ -566,9 +604,18 @@ impl LimeDaw {
         self.redo_stack.clear();
     }
 
+    /// Note that something changed that affects how the project sounds.
     pub fn touch(&mut self) {
         self.dirty = true;
         self.needs_sync = true;
+    }
+
+    /// Note that something changed about *what* is played — notes, patterns,
+    /// clips, mutes — so the schedule has to be compiled again.
+    pub fn touch_schedule(&mut self) {
+        self.dirty = true;
+        self.needs_sync = true;
+        self.schedule_dirty = true;
     }
 
     pub fn undo_stack_len(&self) -> usize {
@@ -612,8 +659,20 @@ impl LimeDaw {
     /// Rebuild the engine snapshot from the project and hand it over.
     pub fn sync_engine(&mut self) {
         self.generation += 1;
+        self.last_sync = Instant::now();
         let mode = self.play_mode;
-        let compiled = schedule::compile(&self.project, mode);
+
+        // Recompiling walks every note in the project; a knob drag would do it
+        // sixty times a second and starve the audio thread of a core.
+        let compiled = match (self.schedule_dirty, &self.last_schedule) {
+            (false, Some(existing)) => existing.clone(),
+            _ => {
+                let built = Arc::new(schedule::compile(&self.project, mode));
+                self.last_schedule = Some(built.clone());
+                self.schedule_dirty = false;
+                built
+            }
+        };
 
         // Assign a soundfont slot to every channel that needs one.
         let mut slots: Vec<(Id, u16, u16, bool)> = Vec::new();
@@ -1055,7 +1114,11 @@ impl LimeDaw {
                 } else {
                     self.engine.collect();
                 }
-                if self.needs_sync {
+                // Coalesce edits: dragging a control changes the project on
+                // every frame, but the engine only needs the result.
+                if self.needs_sync
+                    && now.saturating_duration_since(self.last_sync) >= Duration::from_millis(30)
+                {
                     self.sync_engine();
                 }
                 self.expire_previews();
@@ -1097,7 +1160,17 @@ impl LimeDaw {
     pub fn subscription(&self) -> Subscription<Message> {
         #[allow(unused_mut)]
         let mut subs = vec![
-            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick),
+            // Sixty frames a second while something is moving; a quarter of
+            // that when nothing is, which leaves the audio thread alone on a
+            // machine that has other work to do.
+            iced::time::every(Duration::from_millis(
+                if self.engine.status().playing() || self.render_progress.is_running() {
+                    16
+                } else {
+                    48
+                },
+            ))
+            .map(|_| Message::Tick),
             iced::system::theme_changes().map(Message::SystemTheme),
             iced::keyboard::listen().map(Message::Keyboard),
         ];
@@ -1133,7 +1206,8 @@ impl LimeDaw {
                     (Key::Character("c"), true, _) => Message::CopyNotes,
                     (Key::Character("v"), true, _) => Message::PasteNotes,
                     (Key::Character("d"), true, _) => Message::DuplicateNotes,
-                    (Key::Character("q"), true, _) => Message::QuantizeSelection,
+                    (Key::Character("q"), true, true) => Message::QuantizeSelection,
+                    (Key::Character("q"), true, false) => Message::Quit,
                     (Key::Named(Named::Delete) | Key::Named(Named::Backspace), _, _) => {
                         Message::DeleteSelection
                     }
@@ -1141,7 +1215,13 @@ impl LimeDaw {
                     (Key::Named(Named::F6), _, _) => Message::SetView(MainView::PianoRoll),
                     (Key::Named(Named::F7), _, _) => Message::SetView(MainView::Playlist),
                     (Key::Named(Named::F9), _, _) => Message::SetView(MainView::Mixer),
-                    (Key::Named(Named::Escape), _, _) => Message::Panic,
+                    (Key::Named(Named::Escape), _, _) => {
+                        if self.open_menu.is_some() {
+                            Message::CloseMenu
+                        } else {
+                            Message::Panic
+                        }
+                    }
                     (Key::Character("["), false, _) => {
                         Message::SetKeyboardOctave(self.keyboard_octave - 1)
                     }

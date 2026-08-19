@@ -9,10 +9,14 @@ use crate::model::{Clip, ClipSource, Id, Playlist as PlaylistModel};
 use crate::theme;
 use crate::ui;
 
-const HEADER_WIDTH: f32 = 132.0;
+const HEADER_WIDTH: f32 = 140.0;
 const RULER_HEIGHT: f32 = 24.0;
-const TRACK_HEIGHT: f32 = 40.0;
+const TRACK_HEIGHT: f32 = 56.0;
 const RESIZE_GRIP: f32 = 7.0;
+/// Height of the name strip along the top of a clip.
+const CLIP_LABEL: f32 = 12.0;
+/// A hard ceiling on rows, so a stray scroll cannot ask for four billion.
+const MAX_TRACKS: usize = 256;
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -101,10 +105,31 @@ pub enum Interaction {
     },
 }
 
+/// A note reduced to what the clip preview needs to draw it.
+#[derive(Debug, Clone, Copy)]
+pub struct PreviewNote {
+    pub start: f64,
+    pub length: f64,
+    pub key: u8,
+    pub color: Color,
+}
+
+/// Everything the canvas needs to know about one pattern.
+#[derive(Debug, Clone)]
+pub struct PatternPreview {
+    pub id: Id,
+    pub name: String,
+    pub color: Color,
+    pub length: f64,
+    pub notes: Vec<PreviewNote>,
+    /// The key range the notes span, so the preview fills the clip's height.
+    pub low_key: u8,
+    pub high_key: u8,
+}
+
 struct PlaylistCanvas<'a> {
     playlist: &'a PlaylistModel,
-    pattern_names: Vec<(Id, String, Color)>,
-    pattern_lengths: Vec<(Id, f64)>,
+    patterns: Vec<PatternPreview>,
     state: &'a State,
     position: f64,
     beats_per_bar: f64,
@@ -124,6 +149,8 @@ impl PlaylistCanvas<'_> {
         RULER_HEIGHT + (index as f32 - self.state.scroll_track) * TRACK_HEIGHT
     }
 
+    /// The row at `y`, whether or not it exists yet. Rows are created on demand
+    /// so the editor never runs out of them.
     fn track_of_y(&self, y: f32) -> Option<usize> {
         if y < RULER_HEIGHT {
             return None;
@@ -133,7 +160,12 @@ impl PlaylistCanvas<'_> {
             return None;
         }
         let index = index as usize;
-        (index < self.playlist.tracks.len()).then_some(index)
+        (index < MAX_TRACKS).then_some(index)
+    }
+
+    /// How many rows are on screen, so the empty ones below can be drawn too.
+    fn visible_rows(&self, height: f32) -> usize {
+        (((height - RULER_HEIGHT) / TRACK_HEIGHT).ceil() as usize + 1).min(MAX_TRACKS)
     }
 
     fn snap_beat(&self, beat: f64) -> f64 {
@@ -155,12 +187,8 @@ impl PlaylistCanvas<'_> {
             .find(|c| c.track == track && c.contains(beat))
     }
 
-    fn pattern_length(&self, id: Id) -> f64 {
-        self.pattern_lengths
-            .iter()
-            .find(|(pid, _)| *pid == id)
-            .map(|(_, len)| *len)
-            .unwrap_or(4.0)
+    fn pattern(&self, id: Id) -> Option<&PatternPreview> {
+        self.patterns.iter().find(|p| p.id == id)
     }
 }
 
@@ -191,7 +219,7 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                         .and_capture(),
                     );
                 }
-                let max_track = self.playlist.tracks.len().saturating_sub(1) as f32;
+                let max_track = MAX_TRACKS.saturating_sub(2) as f32;
                 let track = (self.state.scroll_track - dy).clamp(0.0, max_track);
                 Some(
                     canvas::Action::publish(Action::Scroll {
@@ -323,7 +351,7 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                         let start = self.snap_beat(*origin_start + beat_delta);
                         let track_delta = ((point.y - anchor.y) / TRACK_HEIGHT).round() as isize;
                         let track = (*origin_track as isize + track_delta)
-                            .clamp(0, self.playlist.tracks.len() as isize - 1)
+                            .clamp(0, MAX_TRACKS as isize - 1)
                             as usize;
                         Some(
                             canvas::Action::publish(Action::SetClip {
@@ -378,18 +406,29 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
         let mut frame = Frame::new(renderer, size);
         frame.fill_rectangle(Point::ORIGIN, size, p.surface_low);
 
-        // Track lanes.
+        // Track lanes. Rows past the end of the list are drawn as empty lanes,
+        // so the editor keeps going as far as it is scrolled.
         let solo = self.playlist.any_solo();
-        for (index, track) in self.playlist.tracks.iter().enumerate() {
+        let first_row = self.state.scroll_track.floor().max(0.0) as usize;
+        let last_row = (first_row + self.visible_rows(size.height)).min(MAX_TRACKS);
+        for index in first_row..last_row {
             let y = self.y_of_track(index);
             if y + TRACK_HEIGHT < RULER_HEIGHT || y > size.height {
                 continue;
             }
-            let dim = track.muted || (solo && !track.solo);
+            let track = self.playlist.tracks.get(index);
+            let dim = track.map(|t| t.muted || (solo && !t.solo)).unwrap_or(false);
             let lane = if index % 2 == 0 {
                 p.surface_low
             } else {
                 theme::lighten(p.surface_low, if p.is_dark { 0.035 } else { 0.02 })
+            };
+            // A row that does not exist yet is drawn fainter, so it reads as
+            // available rather than as part of the arrangement.
+            let lane = if track.is_none() {
+                theme::alpha(lane, 0.55)
+            } else {
+                lane
             };
             frame.fill_rectangle(
                 Point::new(HEADER_WIDTH, y),
@@ -433,7 +472,8 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
             }
         }
 
-        // Clips.
+        // Clips. Each one carries a miniature of the notes it will play, so
+        // the arrangement can be read at a glance without opening anything.
         for clip in &self.playlist.clips {
             let y = self.y_of_track(clip.track);
             if y + TRACK_HEIGHT < RULER_HEIGHT || y > size.height {
@@ -444,64 +484,129 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
             if x + width < HEADER_WIDTH || x > size.width {
                 continue;
             }
-            let (name, colour) = match clip.source {
-                ClipSource::Pattern(id) => self
-                    .pattern_names
-                    .iter()
-                    .find(|(pid, _, _)| *pid == id)
-                    .map(|(_, name, colour)| (name.clone(), *colour))
-                    .unwrap_or_else(|| ("?".into(), p.text_dim)),
-                ClipSource::Automation(_) => ("Automation".into(), p.warning),
+
+            let pattern = match clip.source {
+                ClipSource::Pattern(id) => self.pattern(id),
+                ClipSource::Automation(_) => None,
             };
+            let (name, colour) = match (&clip.source, pattern) {
+                (_, Some(p)) => (p.name.clone(), p.color),
+                (ClipSource::Automation(_), _) => ("Automation".to_string(), p.warning),
+                _ => ("?".to_string(), p.text_dim),
+            };
+
             let selected = self.state.selection.contains(&clip.id);
             let left = x.max(HEADER_WIDTH);
             let draw_width = (x + width - left).max(3.0);
+            let top = y + 3.0;
+            let height = TRACK_HEIGHT - 7.0;
             let fill = if clip.muted {
-                theme::alpha(colour, 0.3)
+                theme::alpha(colour, 0.28)
             } else {
                 colour
             };
 
+            // Body: dark, so the notes drawn on it read clearly.
             frame.fill_rectangle(
-                Point::new(left, y + 3.0),
-                Size::new(draw_width, TRACK_HEIGHT - 7.0),
-                theme::alpha(fill, 0.85),
+                Point::new(left, top),
+                Size::new(draw_width, height),
+                theme::mix(p.surface_low, fill, if clip.muted { 0.10 } else { 0.22 }),
             );
+            // Name strip across the top, in the pattern's own colour.
+            let label_height = CLIP_LABEL.min(height);
+            frame.fill_rectangle(
+                Point::new(left, top),
+                Size::new(draw_width, label_height),
+                fill,
+            );
+
+            // The miniature itself.
+            if let Some(pattern) = pattern {
+                let body_top = top + label_height + 1.0;
+                let body_height = (height - label_height - 2.0).max(1.0);
+                if !pattern.notes.is_empty() && body_height > 3.0 && draw_width > 6.0 {
+                    // Spread the pattern's key range over the clip's height,
+                    // with a little padding so edge notes stay visible.
+                    let span = (pattern.high_key - pattern.low_key) as f32 + 1.0;
+                    let note_height = (body_height / span).clamp(1.0, 4.0);
+                    let pattern_length = pattern.length.max(0.25);
+
+                    // A clip longer than its pattern repeats it; draw each pass.
+                    let mut repeat = 0usize;
+                    loop {
+                        let origin = clip.start + repeat as f64 * pattern_length - clip.offset;
+                        if origin >= clip.end() {
+                            break;
+                        }
+                        if repeat > 512 {
+                            break;
+                        }
+                        for note in &pattern.notes {
+                            let start = origin + note.start;
+                            if start >= clip.end() || start + note.length <= clip.start {
+                                continue;
+                            }
+                            let nx = self.x_of_beat(start.max(clip.start));
+                            let nw = ((note.length * self.state.pixels_per_beat as f64) as f32)
+                                .min(x + width - nx)
+                                .max(1.0);
+                            if nx + nw < left || nx > left + draw_width {
+                                continue;
+                            }
+                            let nx = nx.max(left);
+                            let nw = nw.min(left + draw_width - nx).max(1.0);
+                            let from_top = (pattern.high_key - note.key) as f32;
+                            let ny = body_top + from_top / span * body_height;
+                            if ny + note_height > body_top + body_height {
+                                continue;
+                            }
+                            frame.fill_rectangle(
+                                Point::new(nx, ny),
+                                Size::new(nw, note_height),
+                                if clip.muted {
+                                    theme::alpha(note.color, 0.4)
+                                } else {
+                                    note.color
+                                },
+                            );
+                        }
+                        repeat += 1;
+                    }
+                }
+
+                // Repeat markers, drawn over the miniature.
+                let pattern_length = pattern.length.max(0.25);
+                let mut repeat = pattern_length;
+                while repeat < clip.length {
+                    let rx = self.x_of_beat(clip.start + repeat);
+                    if rx > left && rx < left + draw_width {
+                        frame.fill_rectangle(
+                            Point::new(rx, top),
+                            Size::new(1.0, height),
+                            theme::alpha(p.base, 0.55),
+                        );
+                    }
+                    repeat += pattern_length;
+                }
+            }
+
             frame.stroke_rectangle(
-                Point::new(left, y + 3.0),
-                Size::new(draw_width, TRACK_HEIGHT - 7.0),
+                Point::new(left, top),
+                Size::new(draw_width, height),
                 Stroke::default()
                     .with_color(if selected {
                         p.accent
                     } else {
-                        theme::darken(fill, 0.35)
+                        theme::darken(fill, 0.4)
                     })
                     .with_width(if selected { 2.0 } else { 1.0 }),
             );
-            // Repeat markers show where the pattern loops inside a long clip.
-            if let ClipSource::Pattern(id) = clip.source {
-                let pattern_length = self.pattern_length(id);
-                if pattern_length > 0.0 {
-                    let mut repeat = pattern_length;
-                    while repeat < clip.length {
-                        let rx = self.x_of_beat(clip.start + repeat);
-                        if rx > left && rx < left + draw_width {
-                            frame.fill_rectangle(
-                                Point::new(rx, y + 3.0),
-                                Size::new(1.0, TRACK_HEIGHT - 7.0),
-                                theme::alpha(theme::darken(fill, 0.5), 0.8),
-                            );
-                        }
-                        repeat += pattern_length;
-                    }
-                }
-            }
-            if draw_width > 30.0 {
+            if draw_width > 28.0 {
                 frame.fill_text(ui::canvas_text(
                     name,
-                    Point::new(left + 4.0, y + 7.0),
+                    Point::new(left + 4.0, top + 1.0),
                     theme::contrasting_text(fill),
-                    10.0,
+                    9.0,
                 ));
             }
         }
@@ -523,11 +628,20 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
             Size::new(HEADER_WIDTH, size.height - RULER_HEIGHT),
             p.surface,
         );
-        for (index, track) in self.playlist.tracks.iter().enumerate() {
+        for index in first_row..last_row {
             let y = self.y_of_track(index);
             if y + TRACK_HEIGHT < RULER_HEIGHT || y > size.height {
                 continue;
             }
+            let Some(track) = self.playlist.tracks.get(index) else {
+                frame.fill_text(ui::canvas_text(
+                    format!("{}", index + 1),
+                    Point::new(10.0, y + TRACK_HEIGHT / 2.0 - 6.0),
+                    theme::alpha(p.text_dim, 0.45),
+                    10.0,
+                ));
+                continue;
+            };
             frame.fill_rectangle(
                 Point::new(0.0, y + 4.0),
                 Size::new(4.0, TRACK_HEIGHT - 9.0),
@@ -659,20 +773,45 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
 
 pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let beats_per_bar = app.project.beats_per_bar();
+    // Each pattern is reduced to what the miniature needs: the notes, their
+    // channel colours, and the key range to fit them into.
+    let patterns: Vec<PatternPreview> = app
+        .project
+        .patterns
+        .iter()
+        .map(|pattern| {
+            let notes: Vec<PreviewNote> = pattern
+                .notes
+                .iter()
+                .map(|n| PreviewNote {
+                    start: n.start,
+                    length: n.length,
+                    key: n.key,
+                    color: app
+                        .project
+                        .channel(n.channel)
+                        .map(|c| c.color.to_iced())
+                        .unwrap_or(pattern.color.to_iced()),
+                })
+                .collect();
+            let low_key = notes.iter().map(|n| n.key).min().unwrap_or(48);
+            let high_key = notes.iter().map(|n| n.key).max().unwrap_or(72);
+            PatternPreview {
+                id: pattern.id,
+                name: pattern.name.clone(),
+                color: pattern.color.to_iced(),
+                length: pattern.length_beats(beats_per_bar),
+                notes,
+                low_key,
+                // A pattern on a single key would divide by zero otherwise.
+                high_key: high_key.max(low_key),
+            }
+        })
+        .collect();
+
     let program = PlaylistCanvas {
         playlist: &app.project.playlist,
-        pattern_names: app
-            .project
-            .patterns
-            .iter()
-            .map(|p| (p.id, p.name.clone(), p.color.to_iced()))
-            .collect(),
-        pattern_lengths: app
-            .project
-            .patterns
-            .iter()
-            .map(|p| (p.id, p.length_beats(beats_per_bar)))
-            .collect(),
+        patterns,
         state: &app.playlist,
         position: app.engine.status().position(),
         beats_per_bar,

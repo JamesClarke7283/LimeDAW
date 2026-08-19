@@ -3,7 +3,7 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_input, vertical_slider};
 use iced::{Alignment, Element, Length, Theme};
 
-use crate::app::{FxHost, LimeDaw, Message};
+use crate::app::{LimeDaw, Message};
 use crate::theme;
 use crate::ui;
 
@@ -19,22 +19,15 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .map(|(index, _)| strip(app, index)))
     .spacing(4);
 
-    let selected = app.selected_mixer_track;
-    let chain = ui::effects::view(app, FxHost::MixerTrack(selected));
-
-    column![
-        container(
-            scrollable(container(strips).padding(6))
-                .direction(scrollable::Direction::Horizontal(
-                    scrollable::Scrollbar::new().width(6).scroller_width(6)
-                ))
-                .style(theme::scroll)
-        )
-        .height(Length::Fixed(330.0))
-        .style(theme::well),
-        container(chain).height(Length::Fill).style(theme::panel),
-    ]
-    .spacing(6)
+    container(
+        scrollable(container(strips).padding(6))
+            .direction(scrollable::Direction::Horizontal(
+                scrollable::Scrollbar::new().width(6).scroller_width(6),
+            ))
+            .style(theme::scroll),
+    )
+    .height(Length::Fill)
+    .style(theme::well)
     .into()
 }
 

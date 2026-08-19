@@ -5,7 +5,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Element, Length, Theme};
 
-use crate::app::{FxHost, InstrumentKindChoice, LimeDaw, Message};
+use crate::app::{InstrumentKindChoice, LimeDaw, Message};
 use crate::model::{DrumModel, Id, Instrument, SampleSource};
 use crate::theme;
 use crate::ui;
@@ -89,8 +89,6 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
             common,
             iced::widget::rule::horizontal(1).style(theme::separator),
             body,
-            iced::widget::rule::horizontal(1).style(theme::separator),
-            ui::effects::view(app, FxHost::Channel(id)),
         ]
         .spacing(10)
         .padding(10),

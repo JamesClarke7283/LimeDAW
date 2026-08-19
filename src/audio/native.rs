@@ -10,10 +10,11 @@ use cpal::{SampleFormat, StreamConfig};
 use crate::audio::core::EngineCore;
 use crate::audio::{EngineShared, pump};
 
-/// The buffer size to ask the device for, in frames. About 21 ms at 48 kHz:
-/// comfortably below the latency anyone notices while playing, and far enough
-/// from the edge that an ordinary scheduling delay does not cause a dropout.
-const PREFERRED_BUFFER: u32 = 1024;
+/// The buffer size to ask the device for, in frames. About 43 ms at 48 kHz:
+/// still below what anyone notices when triggering a note from the interface,
+/// and enough headroom that an ordinary scheduling delay on a busy machine
+/// does not turn into a dropout.
+const PREFERRED_BUFFER: u32 = 2048;
 
 pub struct NativeHost {
     _stream: cpal::Stream,

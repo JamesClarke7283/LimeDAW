@@ -6,6 +6,7 @@ pub mod channel_rack;
 pub mod effects;
 pub mod instrument;
 pub mod mcp_panel;
+pub mod menu;
 pub mod mixer;
 pub mod piano_roll;
 pub mod playlist;

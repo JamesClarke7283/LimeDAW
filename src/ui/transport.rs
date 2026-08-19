@@ -104,13 +104,35 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .spacing(1)
     };
 
+    // The song's own length, so the position readout has something to sit
+    // against.
+    let length_beats = match app.play_mode {
+        PlayMode::Pattern(id) => app.project.pattern_length_beats(id),
+        PlayMode::Song => app.project.song_length_beats(),
+    };
+    let length_bars = (length_beats / beats_per_bar).ceil().max(1.0);
+    let length_seconds = length_beats * app.project.seconds_per_beat();
+
     let readout = column![
-        text(ui::format_position(position, beats_per_bar)).size(18),
-        text(ui::format_time(position * app.project.seconds_per_beat()))
-            .size(10)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme::palette(theme).text_dim)
-            }),
+        row![
+            text(ui::format_position(position, beats_per_bar)).size(18),
+            text(format!("/ {length_bars:.0}"))
+                .size(11)
+                .style(|theme: &Theme| text::Style {
+                    color: Some(theme::palette(theme).text_dim)
+                }),
+        ]
+        .spacing(5)
+        .align_y(Alignment::End),
+        text(format!(
+            "{} / {}",
+            ui::format_time(position * app.project.seconds_per_beat()),
+            ui::format_time(length_seconds)
+        ))
+        .size(10)
+        .style(|theme: &Theme| text::Style {
+            color: Some(theme::palette(theme).text_dim)
+        }),
     ]
     .align_x(Alignment::Center)
     .spacing(0);

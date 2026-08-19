@@ -37,6 +37,7 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     }
 
     column![
+        ui::menu::view(app),
         ui::transport::view(app),
         container(body)
             .width(Length::Fill)
@@ -102,6 +103,13 @@ fn status_bar(app: &LimeDaw) -> Element<'_, Message> {
                     move |theme: &iced::Theme, s| theme::button_tab(theme, s, on)
                 })
                 .on_press(Message::ToggleInstrumentPanel),
+            button(text("Effects").size(10))
+                .padding([2, 7])
+                .style({
+                    let on = app.settings.show_effects_dock;
+                    move |theme: &iced::Theme, s| theme::button_tab(theme, s, on)
+                })
+                .on_press(Message::ToggleEffectsDock),
             button(text("Automation").size(10))
                 .padding([2, 7])
                 .style({
@@ -113,6 +121,26 @@ fn status_bar(app: &LimeDaw) -> Element<'_, Message> {
             ui::caption(format!("{project}{}", if app.dirty { " •" } else { "" })),
             ui::caption(saved),
             iced::widget::space::horizontal(),
+            {
+                // A render runs on a worker, so say so rather than appearing
+                // to have locked up.
+                let bar: Element<'_, Message> = if app.render_progress.is_running() {
+                    let fraction = app.render_progress.fraction();
+                    iced::widget::row![
+                        ui::caption(format!("Rendering {:.0}%", fraction * 100.0)),
+                        iced::widget::progress_bar(0.0..=1.0, fraction)
+                            .length(Length::Fixed(120.0))
+                            .girth(Length::Fixed(6.0))
+                            .style(theme::progress),
+                    ]
+                    .spacing(6)
+                    .align_y(Alignment::Center)
+                    .into()
+                } else {
+                    ui::caption("")
+                };
+                bar
+            },
             ui::caption(app.status.clone()),
             {
                 let label: Element<'_, Message> = if app.recording {

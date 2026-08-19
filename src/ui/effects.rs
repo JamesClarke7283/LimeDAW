@@ -14,28 +14,155 @@ use crate::ui;
 /// Diameter of a rack knob.
 const KNOB: f32 = 42.0;
 
+/// The effects dock along the bottom of the window.
+///
+/// It shows one chain at a time and, above it, the path the signal actually
+/// takes: the channel's own effects, then the mixer insert it is routed to,
+/// then the master. Clicking a step moves the dock to that chain, which is how
+/// LMMS's per-track chain and FX channels fit together.
+pub fn dock(app: &LimeDaw) -> Element<'_, Message> {
+    container(column![routing(app), view(app, app.fx_focus)].spacing(0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(theme::panel)
+        .into()
+}
+
+/// The signal path, as a row of clickable steps.
+fn routing(app: &LimeDaw) -> Element<'_, Message> {
+    let channel = app
+        .selected_channel_id()
+        .and_then(|id| app.project.channel(id));
+    let focus = app.fx_focus;
+
+    let mut path = row![].spacing(4).align_y(Alignment::Center);
+
+    if let Some(channel) = channel {
+        let id = channel.id;
+        let insert = channel.mixer_track.min(app.project.mixer.tracks.len() - 1);
+
+        path = path.push(step_button(
+            format!("{} · {} fx", channel.name, channel.effects.len()),
+            "The channel's own effects, before it reaches the mixer",
+            focus == FxHost::Channel(id),
+            Message::FocusEffects(FxHost::Channel(id)),
+        ));
+        path = path.push(arrow());
+
+        // Which insert this channel feeds, changeable here.
+        let options: Vec<String> = app
+            .project
+            .mixer
+            .tracks
+            .iter()
+            .enumerate()
+            .map(|(i, t)| format!("{i}: {}", t.name))
+            .collect();
+        let selected = options.get(insert).cloned();
+        path = path.push(
+            pick_list(options, selected, move |label: String| {
+                let index = label
+                    .split(':')
+                    .next()
+                    .and_then(|n| n.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                Message::SetChannelMixerTrack(id, index)
+            })
+            .text_size(11)
+            .padding([4, 8])
+            .style(theme::picker),
+        );
+        path = path.push(tooltip(
+            button(text("+").size(12))
+                .padding([4, 8])
+                .style(theme::button_plain)
+                .on_press(Message::RouteChannelToNewInsert(id)),
+            container(text("Route to the next free insert").size(11))
+                .padding(6)
+                .style(theme::card),
+            tooltip::Position::Top,
+        ));
+
+        if insert != 0 {
+            let name = app.project.mixer.tracks[insert].name.clone();
+            let count = app.project.mixer.tracks[insert].effects.len();
+            path = path.push(arrow());
+            path = path.push(step_button(
+                format!("{name} · {count} fx"),
+                "The mixer insert this channel is routed to",
+                focus == FxHost::MixerTrack(insert),
+                Message::FocusEffects(FxHost::MixerTrack(insert)),
+            ));
+        }
+    }
+
+    path = path.push(arrow());
+    let master_count = app.project.mixer.tracks[0].effects.len();
+    path = path.push(step_button(
+        format!("Master · {master_count} fx"),
+        "The last thing before the output",
+        focus == FxHost::MixerTrack(0),
+        Message::FocusEffects(FxHost::MixerTrack(0)),
+    ));
+
+    container(
+        row![
+            ui::caption("Signal path"),
+            path,
+            iced::widget::space::horizontal(),
+            button(text("Hide").size(11))
+                .padding([4, 9])
+                .style(theme::button_plain)
+                .on_press(Message::ToggleEffectsDock),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    )
+    .padding([5, 8])
+    .width(Length::Fill)
+    .style(theme::header)
+    .into()
+}
+
+fn step_button<'a>(
+    label: String,
+    hint: &'a str,
+    active: bool,
+    message: Message,
+) -> Element<'a, Message> {
+    tooltip(
+        button(text(label).size(11))
+            .padding([4, 10])
+            .style(move |theme: &Theme, status| theme::button_tab(theme, status, active))
+            .on_press(message),
+        container(text(hint).size(11)).padding(6).style(theme::card),
+        tooltip::Position::Top,
+    )
+    .into()
+}
+
+fn arrow<'a>() -> Element<'a, Message> {
+    text("→")
+        .size(12)
+        .style(|theme: &Theme| text::Style {
+            color: Some(theme::palette(theme).text_dim),
+        })
+        .into()
+}
+
+/// The chain for one host, as a stack of device panels.
 pub fn view(app: &LimeDaw, host: FxHost) -> Element<'_, Message> {
-    let (title, subtitle, tint) = match host {
+    let tint = match host {
         FxHost::Channel(id) => match app.project.channel(id) {
-            Some(channel) => (
-                channel.name.clone(),
-                "Channel effects — applied before the mixer".to_string(),
-                channel.color.to_iced(),
-            ),
+            Some(channel) => channel.color.to_iced(),
             None => return container(text("")).into(),
         },
-        FxHost::MixerTrack(t) => match app.project.mixer.tracks.get(t) {
-            Some(track) => (
-                track.name.clone(),
-                if t == 0 {
-                    "Master effects — the last thing before the output".to_string()
-                } else {
-                    format!("Insert {t} effects")
-                },
-                theme::palette(&app.theme).accent,
-            ),
-            None => return container(text("")).into(),
-        },
+        FxHost::MixerTrack(t) => {
+            if app.project.mixer.tracks.get(t).is_none() {
+                return container(text("")).into();
+            }
+            theme::palette(&app.theme).accent
+        }
     };
 
     let Some(chain) = app.effect_chain(host) else {
@@ -66,20 +193,13 @@ pub fn view(app: &LimeDaw, host: FxHost) -> Element<'_, Message> {
         .into()
     };
 
-    column![
-        row![
-            column![text(title).size(14), ui::caption(subtitle)].spacing(1),
-            iced::widget::space::horizontal(),
-            ui::caption(format!("{} in chain", chain.len())),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        scrollable(column![devices, add_menu(host)].spacing(10).padding([0, 6]))
-            .style(theme::scroll)
-            .height(Length::Fill),
-    ]
-    .spacing(8)
-    .padding(8)
+    scrollable(
+        column![devices, add_menu(host)]
+            .spacing(10)
+            .padding([8, 10]),
+    )
+    .style(theme::scroll)
+    .height(Length::Fill)
     .into()
 }
 

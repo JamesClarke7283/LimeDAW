@@ -221,7 +221,7 @@ impl LimeDaw {
                 self.project.tempo = bpm.clamp(20.0, 999.0);
                 self.tempo_text = format!("{:.2}", self.project.tempo);
                 self.engine.send(EngineCmd::SetTempo(self.project.tempo));
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "tempo": self.project.tempo }))
             }
             "set_time_signature" => {
@@ -236,7 +236,7 @@ impl LimeDaw {
                     denominator,
                 };
                 self.project.sanitise();
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({
                     "numerator": self.project.time_signature.numerator,
                     "denominator": self.project.time_signature.denominator,
@@ -245,7 +245,7 @@ impl LimeDaw {
             "set_swing" => {
                 let amount = args.f64_of("amount").ok_or_else(|| missing("amount"))?;
                 self.project.swing = amount.clamp(0.0, 0.9);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "swing": self.project.swing }))
             }
             "set_play_mode" => {
@@ -275,7 +275,7 @@ impl LimeDaw {
                 if let Some(enabled) = args.bool_of("enabled") {
                     self.engine.send(EngineCmd::SetLoopEnabled(enabled));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "loop": self.project.playlist.loop_region }))
             }
             "set_metronome" => {
@@ -288,7 +288,7 @@ impl LimeDaw {
             "set_master_volume" => {
                 let volume = args.f32_of("volume").ok_or_else(|| missing("volume"))?;
                 self.project.master_volume = volume.clamp(0.0, 2.0);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "master_volume": self.project.master_volume }))
             }
 
@@ -307,7 +307,7 @@ impl LimeDaw {
                 if self.selected_channel == Some(id) {
                     self.selected_channel = self.project.channels.first().map(|c| c.id);
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": id }))
             }
             "set_channel" => self.set_channel_tool(args),
@@ -347,7 +347,7 @@ impl LimeDaw {
                     .and_then(|c| c.instrument.params().into_iter().find(|p| p.name == param))
                     .map(|p| p.value)
                     .unwrap_or_default();
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "channel": id, "param": param, "value": value }))
             }
             "preview_note" => {
@@ -400,7 +400,7 @@ impl LimeDaw {
                     self.play_mode = PlayMode::Pattern(id);
                     self.engine.send(EngineCmd::SetMode(self.play_mode));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "id": id, "name": name }))
             }
             "remove_pattern" => {
@@ -413,7 +413,7 @@ impl LimeDaw {
                 if self.selected_pattern == Some(id) {
                     self.selected_pattern = self.project.patterns.first().map(|p| p.id);
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": id }))
             }
             "set_pattern" => {
@@ -435,7 +435,7 @@ impl LimeDaw {
                 } else if let Some(length) = args.f64_of("length_beats") {
                     pattern.length_override = Some(length.max(0.25));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "pattern": id }))
             }
             "select_pattern" => {
@@ -462,7 +462,7 @@ impl LimeDaw {
                     None => pattern.notes.clear(),
                 }
                 let removed = before - pattern.notes.len();
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "pattern": id, "removed": removed }))
             }
             "list_notes" => {
@@ -500,7 +500,7 @@ impl LimeDaw {
                     .ok_or("no such pattern")?
                     .notes
                     .push(note);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "id": id, "pattern": pattern_id }))
             }
             "add_notes" => {
@@ -528,7 +528,7 @@ impl LimeDaw {
                     .ok_or("no such pattern")?
                     .notes
                     .extend(prepared);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "pattern": pattern_id, "added": added.len(), "ids": added }))
             }
             "update_note" => {
@@ -573,7 +573,7 @@ impl LimeDaw {
                     }
                     note.channel = channel;
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "note": note_id }))
             }
             "remove_note" => {
@@ -589,7 +589,7 @@ impl LimeDaw {
                 if pattern.notes.len() == before {
                     return Err(format!("no note with id {note_id}"));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": note_id }))
             }
             "set_steps" => self.set_steps_tool(args),
@@ -611,7 +611,7 @@ impl LimeDaw {
                         moved += 1;
                     }
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "moved": moved }))
             }
             "quantize_notes" => {
@@ -635,7 +635,7 @@ impl LimeDaw {
                         moved += 1;
                     }
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "quantized": moved, "grid": grid }))
             }
             "humanize_notes" => {
@@ -663,7 +663,7 @@ impl LimeDaw {
                     note.velocity = (note.velocity + b as f32 * velocity).clamp(0.05, 1.0);
                     touched += 1;
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "humanized": touched }))
             }
 
@@ -699,7 +699,7 @@ impl LimeDaw {
                     .max(0.25);
                 self.checkpoint();
                 let id = self.project.add_clip(track, pattern, start, length);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "id": id, "track": track, "start": start, "length": length }))
             }
             "remove_clip" => {
@@ -710,7 +710,7 @@ impl LimeDaw {
                 if self.project.playlist.clips.len() == before {
                     return Err(format!("no clip with id {id}"));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": id }))
             }
             "move_clip" => {
@@ -733,7 +733,7 @@ impl LimeDaw {
                 if let Some(muted) = args.bool_of("muted") {
                     clip.muted = muted;
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "clip": id }))
             }
             "set_playlist_track" => {
@@ -754,7 +754,7 @@ impl LimeDaw {
                 if let Some(colour) = colour {
                     track.color = colour;
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "track": index }))
             }
 
@@ -798,7 +798,7 @@ impl LimeDaw {
                 if let Some(solo) = args.bool_of("solo") {
                     track.solo = solo;
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "track": index }))
             }
             "add_effect" => {
@@ -820,7 +820,7 @@ impl LimeDaw {
                         chain.len() - 1
                     }
                 };
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "slot": slot, "kind": slug }))
             }
             "remove_effect" => {
@@ -832,7 +832,7 @@ impl LimeDaw {
                     return Err(format!("no effect in slot {slot}"));
                 }
                 let removed = chain.remove(slot);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": removed.name(), "slot": slot }))
             }
             "list_effects" => {
@@ -880,7 +880,7 @@ impl LimeDaw {
                         return Err(format!("unknown parameter: {param}"));
                     }
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "slot": slot }))
             }
             "move_effect" => {
@@ -899,7 +899,7 @@ impl LimeDaw {
                     let effect = chain.remove(slot);
                     chain.insert(to, effect);
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "from": slot, "to": to }))
             }
             "apply_effect_preset" => {
@@ -926,7 +926,7 @@ impl LimeDaw {
                         available.join(", ")
                     ));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(self.effect_json(host, slot))
             }
             "set_effect_params" => {
@@ -986,7 +986,7 @@ impl LimeDaw {
                         let _ = effect.kind.set_param(name, *value);
                     }
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(self.effect_json(host, slot))
             }
             "clear_effects" => {
@@ -1001,7 +1001,7 @@ impl LimeDaw {
                     None => 0,
                 };
                 self.selected_effect = None;
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": removed }))
             }
             "copy_effects" => {
@@ -1043,7 +1043,7 @@ impl LimeDaw {
                     }
                     chain.extend(effects.iter().copied());
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "copied": effects.len() }))
             }
             "list_effect_kinds" => {
@@ -1105,7 +1105,7 @@ impl LimeDaw {
                 if amount > 0.001 {
                     track.sends.push((to, amount.clamp(0.0, 1.0)));
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "ok": true, "from": from, "to": to, "amount": amount }))
             }
 
@@ -1153,7 +1153,7 @@ impl LimeDaw {
                         let _ = channel.instrument.set_param(name, *value);
                     }
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "channel": id, "set": resolved.len() }))
             }
             "clone_channel" => {
@@ -1189,7 +1189,7 @@ impl LimeDaw {
                     }
                 }
                 self.selected_channel = Some(new_id);
-                self.touch();
+                self.touch_schedule();
                 let summary = self
                     .project
                     .channel(new_id)
@@ -1208,7 +1208,7 @@ impl LimeDaw {
                 self.checkpoint();
                 let channel = self.project.channels.remove(from);
                 self.project.channels.insert(to, channel);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "channel": id, "from": from, "to": to }))
             }
             "clone_pattern" => {
@@ -1226,7 +1226,7 @@ impl LimeDaw {
                 }
                 self.project.patterns.push(clone);
                 self.selected_pattern = Some(new_id);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "id": new_id, "notes": source.notes.len() }))
             }
             "copy_notes" => {
@@ -1271,7 +1271,7 @@ impl LimeDaw {
                 if let Some(pattern) = self.project.pattern_mut(to_pattern) {
                     pattern.notes.extend(copies);
                 }
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "copied": count, "to_pattern": to_pattern, "to_channel": to_channel }))
             }
             "set_grid" => {
@@ -1339,7 +1339,7 @@ impl LimeDaw {
                 if args.bool_of("all").unwrap_or(false) {
                     let count = pattern.automation.len();
                     pattern.automation.clear();
-                    self.touch();
+                    self.touch_schedule();
                     return Ok(json!({ "removed": count }));
                 }
                 let index = args.usize_of("index").ok_or("pass index, or all:true")?;
@@ -1347,7 +1347,7 @@ impl LimeDaw {
                     return Err("no lane at that index".into());
                 }
                 pattern.automation.remove(index);
-                self.touch();
+                self.touch_schedule();
                 Ok(json!({ "removed": 1 }))
             }
 
@@ -1453,7 +1453,7 @@ impl LimeDaw {
                         }
                         pattern.notes.extend(placed);
                     }
-                    self.touch();
+                    self.touch_schedule();
                     Ok(json!({
                         "pattern": pattern_id,
                         "channel": channel,
@@ -1707,7 +1707,7 @@ impl LimeDaw {
             }
         }
         self.selected_channel = Some(id);
-        self.touch();
+        self.touch_schedule();
         let summary = self
             .project
             .channel(id)
@@ -1752,7 +1752,7 @@ impl LimeDaw {
         if let Some(colour) = colour {
             channel.color = colour;
         }
-        self.touch();
+        self.touch_schedule();
         let summary = self
             .project
             .channel(id)
@@ -1798,7 +1798,7 @@ impl LimeDaw {
         if let Some(path) = args.str_of("sample_path") {
             self.load_sample_now(id, &path)?;
         }
-        self.touch();
+        self.touch_schedule();
         let summary = self
             .project
             .channel(id)
@@ -1905,7 +1905,7 @@ impl LimeDaw {
                 });
             }
         }
-        self.touch();
+        self.touch_schedule();
         Ok(json!({
             "pattern": pattern_id,
             "channel": channel,
@@ -1950,7 +1950,7 @@ impl LimeDaw {
         }
         lane.sort();
         let total = lane.points.len();
-        self.touch();
+        self.touch_schedule();
         Ok(json!({
             "pattern": pattern_id,
             "target": target.label(),
@@ -2021,62 +2021,92 @@ impl LimeDaw {
     }
 
     fn export_wav(&mut self, args: &Value) -> Result<Value, String> {
-        #[cfg(target_arch = "wasm32")]
-        {
-            let _ = args;
-            Err("rendering to a file is only available in the desktop app".into())
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let mode = match args
-                .str_of("mode")
-                .unwrap_or_else(|| "song".into())
-                .as_str()
-            {
-                "pattern" => PlayMode::Pattern(
-                    self.selected_pattern_id()
-                        .ok_or("there is no pattern to render")?,
-                ),
-                _ => PlayMode::Song,
-            };
-            let tail = args.f32_of("tail_seconds").unwrap_or(2.0).clamp(0.0, 30.0);
-            let path = match args.str_of("path") {
-                Some(raw) => {
-                    let p = PathBuf::from(&raw);
-                    if p.is_absolute() {
-                        p
-                    } else {
-                        crate::paths::renders_dir().join(raw)
-                    }
-                }
-                None => crate::paths::renders_dir().join(format!(
-                    "{}.wav",
-                    crate::actions::safe_name(&self.project.name)
-                )),
-            };
+        // The interface intercepts this tool and runs it on a worker; reaching
+        // here means the platform cannot render at all.
+        let _ = args;
+        Err("rendering to a file is only available in the desktop app".into())
+    }
 
-            let snapshot = self.build_render_snapshot(mode);
-            let length = snapshot.schedule.length;
-            if length <= 0.0 {
-                return Err("there is nothing to render".into());
+    /// Start an MCP-requested render on a worker thread and answer from there.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn export_wav_for_mcp(
+        &mut self,
+        job: crate::app::SharedJob,
+        args: &Value,
+    ) -> iced::Task<crate::app::Message> {
+        let mode = match args
+            .str_of("mode")
+            .unwrap_or_else(|| "song".into())
+            .as_str()
+        {
+            "pattern" => match self.selected_pattern_id() {
+                Some(id) => PlayMode::Pattern(id),
+                None => {
+                    crate::app::respond(job, Err("there is no pattern to render".into()));
+                    return iced::Task::none();
+                }
+            },
+            _ => PlayMode::Song,
+        };
+        let tail = args.f32_of("tail_seconds").unwrap_or(2.0).clamp(0.0, 30.0);
+        let path = match args.str_of("path") {
+            Some(raw) => {
+                let p = PathBuf::from(&raw);
+                if p.is_absolute() {
+                    p
+                } else {
+                    crate::paths::renders_dir().join(raw)
+                }
             }
-            let synths = self.build_render_synths_public();
-            let sample_rate = 44_100.0;
-            let samples = crate::audio::render_offline(
-                std::sync::Arc::new(snapshot),
-                synths,
-                sample_rate,
-                length,
-                tail,
-            );
-            crate::persist::write_wav(&path, &samples, sample_rate as u32)
-                .map_err(|e| format!("could not write {}: {e}", path.display()))?;
-            Ok(json!({
-                "path": path.to_string_lossy(),
-                "seconds": samples.len() as f64 / 2.0 / sample_rate as f64,
-                "sample_rate": sample_rate,
-            }))
+            None => crate::paths::renders_dir().join(format!(
+                "{}.wav",
+                crate::actions::safe_name(&self.project.name)
+            )),
+        };
+
+        if self.needs_sync {
+            self.sync_engine();
         }
+        let snapshot = self.build_render_snapshot(mode);
+        let length = snapshot.schedule.length;
+        if length <= 0.0 {
+            crate::app::respond(job, Err("there is nothing to render".into()));
+            return iced::Task::none();
+        }
+        let synths = self.build_render_synths_public();
+        let sample_rate = 44_100.0;
+        let progress = self.render_progress.clone();
+        progress.reset();
+        self.note("Rendering for MCP…");
+
+        let snapshot = std::sync::Arc::new(snapshot);
+        let reply_path = path.clone();
+        std::thread::Builder::new()
+            .name("limedaw-mcp-render".into())
+            .spawn(move || {
+                let samples = crate::audio::render_offline_with_progress(
+                    snapshot,
+                    synths,
+                    sample_rate,
+                    length,
+                    tail,
+                    Some(&progress),
+                );
+                let frames = samples.len() / 2;
+                let result = crate::persist::write_wav(&reply_path, &samples, sample_rate as u32)
+                    .map(|_| {
+                        json!({
+                            "path": reply_path.to_string_lossy(),
+                            "seconds": frames as f64 / sample_rate as f64,
+                            "sample_rate": sample_rate,
+                        })
+                    })
+                    .map_err(|e| format!("could not write {}: {e}", reply_path.display()));
+                crate::app::respond(job, result);
+            })
+            .expect("spawning the render thread");
+
+        iced::Task::none()
     }
 }
 

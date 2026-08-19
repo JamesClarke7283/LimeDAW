@@ -11,10 +11,8 @@ use crate::ui;
 
 /// Height of one channel row, shared by the strip column and the step grid.
 pub const ROW_HEIGHT: f32 = 34.0;
-/// Width of one step cell.
-const STEP_WIDTH: f32 = 26.0;
 /// Height of the step ruler above the grid.
-const RULER_HEIGHT: f32 = 18.0;
+const RULER_HEIGHT: f32 = 26.0;
 
 #[derive(Debug, Clone)]
 pub enum Action {
@@ -45,6 +43,10 @@ pub enum Interaction {
 }
 
 struct StepGrid {
+    /// Width of one step cell, from the zoom control.
+    step_width: f32,
+    /// Seconds per beat, so the ruler can show time as well as bars.
+    seconds_per_beat: f64,
     channels: Vec<(Id, Color, bool)>,
     /// Velocity per (row, step), or `None` where there is no hit. Built once
     /// per frame so drawing never rescans the pattern for every cell.
@@ -61,7 +63,7 @@ impl StepGrid {
         if x < 0.0 {
             return None;
         }
-        let step = (x / STEP_WIDTH) as usize;
+        let step = (x / self.step_width.max(1.0)) as usize;
         (step < self.steps).then_some(step)
     }
 
@@ -179,26 +181,72 @@ impl canvas::Program<Action> for StepGrid {
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), p.surface_low);
 
         let steps_per_bar = (self.beats_per_bar / self.step_beats).round().max(1.0) as usize;
+        let steps_per_beat = (1.0 / self.step_beats).round().max(1.0) as usize;
+        let bar_width = steps_per_bar as f32 * self.step_width;
         let hover = cursor.position_in(bounds);
+        let grid_top = RULER_HEIGHT;
+        let grid_bottom = grid_top + self.channels.len() as f32 * ROW_HEIGHT;
 
-        // Ruler.
+        // Alternate the background bar by bar, so where one ends and the next
+        // begins is readable without counting cells.
+        for bar in 0..self.steps.div_ceil(steps_per_bar) {
+            if bar % 2 == 1 {
+                let x = bar as f32 * bar_width;
+                frame.fill_rectangle(
+                    Point::new(x, grid_top),
+                    Size::new(bar_width.min(bounds.width - x), grid_bottom - grid_top),
+                    theme::lighten(p.surface_low, if p.is_dark { 0.028 } else { 0.018 }),
+                );
+            }
+        }
+
+        // Ruler: bar number, the time that bar starts at, and beat ticks.
         frame.fill_rectangle(
             Point::ORIGIN,
             Size::new(bounds.width, RULER_HEIGHT),
             p.surface_high,
         );
-        for step in 0..self.steps {
-            let x = step as f32 * STEP_WIDTH;
+        for step in 0..=self.steps {
+            let x = step as f32 * self.step_width;
             if step % steps_per_bar == 0 {
-                frame.fill_rectangle(Point::new(x, 0.0), Size::new(1.0, RULER_HEIGHT), p.grid_bar);
+                let bar = step / steps_per_bar;
+                // A full-height delimiter, so bars are separated everywhere.
+                frame.fill_rectangle(Point::new(x, 0.0), Size::new(1.5, grid_bottom), p.grid_bar);
                 frame.fill_text(ui::canvas_text(
-                    format!("{}", step / steps_per_bar + 1),
-                    Point::new(x + 3.0, 3.0),
-                    p.text_dim,
+                    format!("{}", bar + 1),
+                    Point::new(x + 4.0, 2.0),
+                    p.text,
                     10.0,
                 ));
+                // The elapsed time at this bar, when there is room for it.
+                if bar_width > 54.0 {
+                    let seconds = bar as f64 * self.beats_per_bar * self.seconds_per_beat;
+                    frame.fill_text(ui::canvas_text(
+                        ui::format_time(seconds),
+                        Point::new(x + 4.0, 13.0),
+                        p.text_dim,
+                        9.0,
+                    ));
+                }
+            } else if step % steps_per_beat == 0 {
+                frame.fill_rectangle(
+                    Point::new(x, RULER_HEIGHT - 7.0),
+                    Size::new(1.0, 7.0),
+                    p.grid_beat,
+                );
+                // A lighter beat line through the grid itself.
+                frame.fill_rectangle(
+                    Point::new(x, grid_top),
+                    Size::new(1.0, grid_bottom - grid_top),
+                    theme::alpha(p.grid_beat, 0.5),
+                );
             }
         }
+        frame.fill_rectangle(
+            Point::new(0.0, RULER_HEIGHT - 1.0),
+            Size::new(bounds.width, 1.0),
+            p.border,
+        );
 
         // Cells.
         for (row, (channel, colour, audible)) in self.channels.iter().enumerate() {
@@ -213,21 +261,28 @@ impl canvas::Program<Action> for StepGrid {
                 );
             }
             for step in 0..self.steps {
-                let x = step as f32 * STEP_WIDTH;
-                let beat_group = (step / (steps_per_bar / 4).max(1)).is_multiple_of(2);
+                let x = step as f32 * self.step_width;
+                if x > bounds.width {
+                    break;
+                }
+                let on_beat = step.is_multiple_of(steps_per_beat);
+                let inset = if self.step_width > 12.0 { 2.0 } else { 1.0 };
                 let cell = Rectangle {
-                    x: x + 2.0,
+                    x: x + inset,
                     y: y + 3.0,
-                    width: STEP_WIDTH - 4.0,
+                    width: (self.step_width - inset * 2.0).max(1.0),
                     height: ROW_HEIGHT - 6.0,
                 };
-                let base = if beat_group {
-                    theme::lighten(p.surface_low, if p.is_dark { 0.05 } else { 0.02 })
+                // Beats get a touch of lift; the bar shading is drawn behind.
+                let base = if on_beat {
+                    theme::lighten(p.surface_low, if p.is_dark { 0.06 } else { 0.03 })
                 } else {
-                    p.surface_low
+                    theme::alpha(p.surface_low, 0.0)
                 };
                 let hovered = hover
-                    .map(|h| h.x >= x && h.x < x + STEP_WIDTH && h.y >= y && h.y < y + ROW_HEIGHT)
+                    .map(|h| {
+                        h.x >= x && h.x < x + self.step_width && h.y >= y && h.y < y + ROW_HEIGHT
+                    })
                     .unwrap_or(false);
                 let fill = match self.step_on(row, step) {
                     Some(velocity) => {
@@ -250,7 +305,7 @@ impl canvas::Program<Action> for StepGrid {
 
         // Playhead over the grid.
         let step_position = (self.position / self.step_beats) as f32;
-        let x = step_position * STEP_WIDTH;
+        let x = step_position * self.step_width;
         if x >= 0.0 && x <= bounds.width {
             frame.fill_rectangle(
                 Point::new(x - 1.0, 0.0),
@@ -337,9 +392,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .fold(0.0f64, f64::max)
         .max(pattern.length_override.unwrap_or(0.0));
     let content_steps = (content_beats / step_beats).ceil() as usize;
+    // Always at least sixteen bars, and always four spare beyond the last
+    // note, so the grid reads as a continuous timeline rather than a page.
     let steps = (content_steps + steps_per_bar * 4)
         .next_multiple_of(steps_per_bar)
-        .max(steps_per_bar * 4);
+        .max(steps_per_bar * 16);
 
     let channels: Vec<(Id, Color, bool)> = app
         .project
@@ -348,7 +405,10 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .map(|c| (c.id, c.color.to_iced(), app.project.channel_audible(c.id)))
         .collect();
 
+    let step_width = app.rack_zoom;
     let grid = StepGrid {
+        step_width,
+        seconds_per_beat: app.project.seconds_per_beat(),
         cells: build_cells(pattern, &channels, steps, step_beats),
         channels: channels.clone(),
         steps,
@@ -359,7 +419,7 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     };
 
     let grid_canvas = Canvas::new(grid)
-        .width(Length::Fixed(steps as f32 * STEP_WIDTH))
+        .width(Length::Fixed(steps as f32 * step_width))
         .height(Length::Fixed(
             RULER_HEIGHT + channels.len() as f32 * ROW_HEIGHT,
         ));
@@ -571,6 +631,38 @@ fn rack_toolbar(app: &LimeDaw) -> Element<'_, Message> {
         .spacing(4),
     };
 
+    // How long the pattern is, in bars and in time, so the ruler's numbers
+    // mean something.
+    let length_info: Element<'_, Message> = match app.selected_pattern_id().and_then(|id| {
+        app.project
+            .pattern(id)
+            .map(|p| p.length_beats(app.project.beats_per_bar()))
+    }) {
+        Some(beats) => {
+            let bars = beats / app.project.beats_per_bar();
+            let seconds = beats * app.project.seconds_per_beat();
+            ui::caption(format!("{bars:.0} bars · {}", ui::format_time(seconds)))
+        }
+        None => ui::caption(""),
+    };
+
+    let zoom: Element<'_, Message> = row![
+        button(text("−").size(12))
+            .padding([3, 8])
+            .style(theme::button_plain)
+            .on_press(Message::SetRackZoom(app.rack_zoom / 1.35)),
+        button(text("+").size(12))
+            .padding([3, 8])
+            .style(theme::button_plain)
+            .on_press(Message::SetRackZoom(app.rack_zoom * 1.35)),
+        button(text("Fit").size(11))
+            .padding([3, 8])
+            .style(theme::button_plain)
+            .on_press(Message::SetRackZoom(8.0)),
+    ]
+    .spacing(3)
+    .into();
+
     let midi = row![
         button(text("Import MIDI").size(11))
             .padding([4, 8])
@@ -599,7 +691,9 @@ fn rack_toolbar(app: &LimeDaw) -> Element<'_, Message> {
             .align_y(Alignment::Center),
             row![
                 add_menu,
+                length_info,
                 iced::widget::space::horizontal(),
+                zoom,
                 midi,
                 channel_actions
             ]

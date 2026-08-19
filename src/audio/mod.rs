@@ -320,13 +320,65 @@ impl Engine {
     }
 }
 
+/// How far along an offline render is, so the interface can say so.
+#[derive(Default)]
+pub struct RenderProgress {
+    /// Frames written so far.
+    done: AtomicU64,
+    /// Frames expected in total. Zero until the render starts.
+    total: AtomicU64,
+}
+
+impl RenderProgress {
+    /// Completion from 0 to 1.
+    pub fn fraction(&self) -> f32 {
+        let total = self.total.load(Ordering::Relaxed);
+        if total == 0 {
+            return 0.0;
+        }
+        (self.done.load(Ordering::Relaxed) as f32 / total as f32).clamp(0.0, 1.0)
+    }
+
+    pub fn is_running(&self) -> bool {
+        let total = self.total.load(Ordering::Relaxed);
+        total > 0 && self.done.load(Ordering::Relaxed) < total
+    }
+
+    pub fn reset(&self) {
+        self.done.store(0, Ordering::Relaxed);
+        self.total.store(0, Ordering::Relaxed);
+    }
+}
+
 /// Render a snapshot to interleaved stereo, offline and as fast as possible.
+///
+/// This is CPU-bound and must not be called on the interface thread; the
+/// callers hand it to a worker and wait for the result.
 pub fn render_offline(
     snapshot: Arc<Snapshot>,
     synths: Vec<(usize, Box<rustysynth::Synthesizer>)>,
     sample_rate: f32,
     length_beats: f64,
     tail_seconds: f32,
+) -> Vec<f32> {
+    render_offline_with_progress(
+        snapshot,
+        synths,
+        sample_rate,
+        length_beats,
+        tail_seconds,
+        None,
+    )
+}
+
+/// The same, reporting how far it has got.
+pub fn render_offline_with_progress(
+    snapshot: Arc<Snapshot>,
+    synths: Vec<(usize, Box<rustysynth::Synthesizer>)>,
+    sample_rate: f32,
+    length_beats: f64,
+    tail_seconds: f32,
+    progress: Option<&RenderProgress>,
 ) -> Vec<f32> {
     let mut core = EngineCore::new(sample_rate);
     let working = Box::new(Working::from_snapshot(&snapshot));
@@ -343,14 +395,27 @@ pub fn render_offline(
 
     let seconds = length_beats * 60.0 / snapshot.tempo.max(1.0) + tail_seconds as f64;
     let total_frames = (seconds * sample_rate as f64).max(0.0) as usize;
+    if let Some(progress) = progress {
+        progress.done.store(0, Ordering::Relaxed);
+        progress.total.store(total_frames as u64, Ordering::Relaxed);
+    }
+
     let mut out = vec![0.0f32; total_frames * 2];
-    let chunk = 4096;
+    // A larger chunk than the live callback uses: there is no deadline here,
+    // and fewer, bigger passes render measurably faster.
+    let chunk = 16_384;
     let mut done = 0;
     while done < total_frames {
         let n = (total_frames - done).min(chunk);
         core.render(&mut out[done * 2..(done + n) * 2]);
         core.trash.clear();
         done += n;
+        if let Some(progress) = progress {
+            progress.done.store(done as u64, Ordering::Relaxed);
+        }
+    }
+    if let Some(progress) = progress {
+        progress.done.store(total_frames as u64, Ordering::Relaxed);
     }
     out
 }
