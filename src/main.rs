@@ -66,5 +66,8 @@ fn print_paths() {
     println!("samples    {}", limedaw::paths::samples_dir().display());
     println!("settings   {}", limedaw::paths::settings_file().display());
     println!("data       {}", limedaw::paths::data_dir().display());
-    println!("mcp socket {}", limedaw::mcp::server::socket_path().display());
+    println!(
+        "mcp socket {}",
+        limedaw::mcp::server::socket_path().display()
+    );
 }

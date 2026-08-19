@@ -120,7 +120,11 @@ pub fn render_drum(model: DrumModel, sr: f32) -> Sample {
                 soft_clip(tone + rattle * 0.85)
             }
             DrumModel::ClosedHat | DrumModel::OpenHat => {
-                let decay = if matches!(model, DrumModel::ClosedHat) { 78.0 } else { 9.0 };
+                let decay = if matches!(model, DrumModel::ClosedHat) {
+                    78.0
+                } else {
+                    9.0
+                };
                 let n = noise.next();
                 let metallic = bp.process(n, crate::model::FilterKind::HighPass, 7_500.0, 0.35, sr);
                 metallic * (-t * decay).exp() * 0.75
@@ -154,7 +158,8 @@ pub fn render_drum(model: DrumModel, sr: f32) -> Sample {
             }
             DrumModel::Cymbal => {
                 // A stack of inharmonic squares, the classic 808-style approach.
-                const RATIOS: [f32; 6] = [1.0, 1.4142, 1.7818, 2.0, 2.4495, 2.8284];
+                const RATIOS: [f32; 6] =
+                    [1.0, std::f32::consts::SQRT_2, 1.7818, 2.0, 2.4495, 2.8284];
                 let mut acc = 0.0;
                 for (k, ratio) in RATIOS.iter().enumerate() {
                     let f = 320.0 * ratio;
@@ -187,7 +192,12 @@ pub fn render_drum(model: DrumModel, sr: f32) -> Sample {
         right.push(s);
     }
 
-    Sample { left, right, sample_rate: sr, name: model.label().to_string() }
+    Sample {
+        left,
+        right,
+        sample_rate: sr,
+        name: model.label().to_string(),
+    }
 }
 
 /// Holds every sample the engine can play, keyed by path (or a `model:` URI).
@@ -221,9 +231,9 @@ impl SampleBank {
     pub fn populate_models(&mut self, sr: f32) {
         for model in DrumModel::ALL {
             let key = Self::key_for_model(model);
-            if !self.samples.contains_key(&key) {
-                self.samples.insert(key, Arc::new(render_drum(model, sr)));
-            }
+            self.samples
+                .entry(key)
+                .or_insert_with(|| Arc::new(render_drum(model, sr)));
         }
     }
 
@@ -267,5 +277,10 @@ pub fn load_wav(path: &std::path::Path) -> anyhow::Result<Sample> {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "sample".into());
-    Ok(Sample { left, right, sample_rate: spec.sample_rate as f32, name })
+    Ok(Sample {
+        left,
+        right,
+        sample_rate: spec.sample_rate as f32,
+        name,
+    })
 }

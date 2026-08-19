@@ -66,7 +66,10 @@ pub struct TimeSignature {
 
 impl Default for TimeSignature {
     fn default() -> Self {
-        Self { numerator: 4, denominator: 4 }
+        Self {
+            numerator: 4,
+            denominator: 4,
+        }
     }
 }
 
@@ -231,12 +234,18 @@ impl Project {
         let keys = p.add_channel("Keys", Instrument::Synth(SynthPatch::pad()));
 
         // Give each channel its own mixer insert so the mixer is immediately useful.
-        for (i, id) in [kick, snare, hat, clap, bass, lead, keys].iter().enumerate() {
+        for (i, id) in [kick, snare, hat, clap, bass, lead, keys]
+            .iter()
+            .enumerate()
+        {
             if let Some(c) = p.channel_mut(*id) {
                 c.mixer_track = i + 1;
             }
         }
-        for (i, name) in ["Kick", "Snare", "Hat", "Clap", "Bass", "Lead", "Keys"].iter().enumerate() {
+        for (i, name) in ["Kick", "Snare", "Hat", "Clap", "Bass", "Lead", "Keys"]
+            .iter()
+            .enumerate()
+        {
             p.mixer.tracks[i + 1].name = (*name).into();
         }
 
@@ -279,7 +288,8 @@ impl Project {
     pub fn add_channel(&mut self, name: impl Into<String>, instrument: Instrument) -> Id {
         let id = self.next_id();
         let index = self.channels.len();
-        self.channels.push(Channel::new(id, name, instrument, index));
+        self.channels
+            .push(Channel::new(id, name, instrument, index));
         id
     }
 
@@ -333,7 +343,9 @@ impl Project {
 
     pub fn remove_pattern(&mut self, id: Id) {
         self.patterns.retain(|p| p.id != id);
-        self.playlist.clips.retain(|c| c.source != ClipSource::Pattern(id));
+        self.playlist
+            .clips
+            .retain(|c| c.source != ClipSource::Pattern(id));
     }
 
     /// Add a 1/16th note at `beat` — what a step-sequencer step actually is.
@@ -450,14 +462,22 @@ impl Project {
                 n.fine_tune = n.fine_tune.clamp(-100.0, 100.0);
                 n.release = n.release.clamp(0.0, 32.0);
             }
-            p.notes.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+            p.notes.sort_by(|a, b| {
+                a.start
+                    .partial_cmp(&b.start)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             if let Some(length) = p.length_override {
                 p.length_override = Some(length.clamp(0.25, 4096.0));
             }
             // `value_at` binary-searches, so lane points must be in order.
             for lane in &mut p.automation {
                 for point in &mut lane.points {
-                    point.beat = if point.beat.is_finite() { point.beat.max(0.0) } else { 0.0 };
+                    point.beat = if point.beat.is_finite() {
+                        point.beat.max(0.0)
+                    } else {
+                        0.0
+                    };
                     point.value = if point.value.is_finite() {
                         point.value.clamp(0.0, 1.0)
                     } else {
@@ -493,8 +513,16 @@ impl Project {
         }
         for lane in &mut self.playlist.automation {
             for point in &mut lane.points {
-                point.beat = if point.beat.is_finite() { point.beat.max(0.0) } else { 0.0 };
-                point.value = if point.value.is_finite() { point.value.clamp(0.0, 1.0) } else { 0.0 };
+                point.beat = if point.beat.is_finite() {
+                    point.beat.max(0.0)
+                } else {
+                    0.0
+                };
+                point.value = if point.value.is_finite() {
+                    point.value.clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
             }
             lane.sort();
         }
@@ -504,7 +532,11 @@ impl Project {
             .iter()
             .map(|c| c.id)
             .chain(self.patterns.iter().map(|p| p.id))
-            .chain(self.patterns.iter().flat_map(|p| p.notes.iter().map(|n| n.id)))
+            .chain(
+                self.patterns
+                    .iter()
+                    .flat_map(|p| p.notes.iter().map(|n| n.id)),
+            )
             .chain(self.playlist.clips.iter().map(|c| c.id))
             .max()
             .unwrap_or(0);

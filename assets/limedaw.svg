@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-1 -1 2 2" width="128" height="128">
+  <rect x="-1" y="-1" width="2" height="2" fill="#080A08"/>
+  <circle r="0.94" fill="#3D6A16"/>
+  <circle r="0.86" fill="#6BA61F"/>
+  <circle r="0.79" fill="#D9EDB8"/>
+  <circle r="0.74" fill="#7CB518"/>
+  <g><path d="M 0 0 L 0.719 0.030 A 0.72 0.72 0 0 1 0.570 0.439 Z" fill="#9BD634"/><path d="M 0 0 L 0.532 0.485 A 0.72 0.72 0 0 1 0.155 0.703 Z" fill="#9BD634"/><path d="M 0 0 L 0.095 0.714 A 0.72 0.72 0 0 1 -0.334 0.638 Z" fill="#9BD634"/><path d="M 0 0 L -0.386 0.608 A 0.72 0.72 0 0 1 -0.666 0.274 Z" fill="#9BD634"/><path d="M 0 0 L -0.686 0.218 A 0.72 0.72 0 0 1 -0.686 -0.218 Z" fill="#9BD634"/><path d="M 0 0 L -0.666 -0.274 A 0.72 0.72 0 0 1 -0.386 -0.608 Z" fill="#9BD634"/><path d="M 0 0 L -0.334 -0.638 A 0.72 0.72 0 0 1 0.095 -0.714 Z" fill="#9BD634"/><path d="M 0 0 L 0.155 -0.703 A 0.72 0.72 0 0 1 0.532 -0.485 Z" fill="#9BD634"/><path d="M 0 0 L 0.570 -0.439 A 0.72 0.72 0 0 1 0.719 -0.030 Z" fill="#9BD634"/></g>
+  <circle r="0.08" fill="#D9EDB8"/>
+</svg>

@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+// `web_time` re-exports the standard types on the desktop and browser-safe
+// equivalents in wasm, so the same code compiles for both.
+use iced::time::{Duration, Instant};
 
 use iced::widget::container;
 use iced::{Element, Subscription, Task, Theme};
@@ -109,13 +111,16 @@ pub enum Setup {
     /// Not shown.
     Done,
     /// Waiting for the user to pick a soundfont.
-    ChooseSoundFont { found: Vec<PathBuf>, error: Option<String> },
+    ChooseSoundFont {
+        found: Vec<PathBuf>,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     // ---- frame and system ----
-    Tick(Instant),
+    Tick,
     SystemTheme(iced::theme::Mode),
     Keyboard(iced::keyboard::Event),
     Noop,
@@ -146,6 +151,7 @@ pub enum Message {
     SetTheme(ThemeChoice),
     SetRenderer(RendererChoice),
     SetUiScale(f32),
+    SetBufferFrames(u32),
     SetStatus(String),
 
     // ---- project ----
@@ -180,8 +186,16 @@ pub enum Message {
     SetDrumModel(Id, DrumModel),
     SetSoundFontPreset(Id, u16, u16),
     LoadSampleDialog(Id),
-    SampleLoaded(Id, String, Result<Arc<crate::audio::samples::Sample>, String>),
-    AddSoundFontChannel { bank: u16, program: u16, name: String },
+    SampleLoaded(
+        Id,
+        String,
+        Result<Arc<crate::audio::samples::Sample>, String>,
+    ),
+    AddSoundFontChannel {
+        bank: u16,
+        program: u16,
+        name: String,
+    },
     AddSampleChannel(PathBuf),
     MoveChannel(Id, isize),
     CloneChannel(Id),
@@ -230,6 +244,7 @@ pub enum Message {
     ToggleEffect(FxHost, usize),
     SetEffectParam(FxHost, usize, String, f32),
     SelectEffect(FxHost, usize),
+    ApplyEffectPreset(FxHost, usize, String),
 
     // ---- soundfont ----
     ChooseSoundFontDialog,
@@ -386,11 +401,19 @@ pub struct LimeDaw {
     pub keyboard_octave: i32,
     /// Notes copied out of the piano roll, relative to the earliest one.
     pub clipboard: Vec<Note>,
+    /// The size the window was last told to be. Only the browser build uses
+    /// this, to keep the canvas matched to the page.
+    pub viewport: iced::Size,
 
     pub(crate) undo_stack: Vec<Project>,
     pub(crate) redo_stack: Vec<Project>,
     pub(crate) needs_sync: bool,
     pub(crate) sf_signature: Vec<(Id, u16, u16, bool)>,
+    /// The effect chains the engine was last given, by slug. Comparing against
+    /// this is what lets a processor be built here rather than in the audio
+    /// callback, where allocating a delay line would cause a dropout.
+    pub(crate) sent_channel_fx: Vec<(Id, Vec<&'static str>)>,
+    pub(crate) sent_mixer_fx: Vec<Vec<&'static str>>,
     pub(crate) generation: u64,
     pub(crate) last_tick: Instant,
     /// Notes currently held down by the mouse or keyboard, so they release.
@@ -420,7 +443,7 @@ impl LimeDaw {
 
         let _ = crate::paths::ensure_all();
 
-        let engine = Engine::start();
+        let engine = Engine::start(settings.buffer_frames);
         let sample_rate = engine.sample_rate();
         let mut bank = SampleBank::default();
         bank.populate_models(sample_rate);
@@ -433,7 +456,10 @@ impl LimeDaw {
         let setup = if settings.setup_complete {
             Setup::Done
         } else {
-            Setup::ChooseSoundFont { found: crate::paths::discover_soundfonts(), error: None }
+            Setup::ChooseSoundFont {
+                found: crate::paths::discover_soundfonts(),
+                error: None,
+            }
         };
 
         let mut app = Self {
@@ -468,10 +494,13 @@ impl LimeDaw {
             recording: false,
             keyboard_octave: 4,
             clipboard: Vec::new(),
+            viewport: iced::Size::new(0.0, 0.0),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             needs_sync: true,
             sf_signature: Vec::new(),
+            sent_channel_fx: Vec::new(),
+            sent_mixer_fx: Vec::new(),
             generation: 0,
             last_tick: Instant::now(),
             held_notes: Vec::new(),
@@ -494,7 +523,11 @@ impl LimeDaw {
     }
 
     pub fn title(&self) -> String {
-        let name = if self.project.name.is_empty() { "Untitled" } else { &self.project.name };
+        let name = if self.project.name.is_empty() {
+            "Untitled"
+        } else {
+            &self.project.name
+        };
         let dirty = if self.dirty { "*" } else { "" };
         format!("{dirty}{name} — LimeDAW")
     }
@@ -509,7 +542,10 @@ impl LimeDaw {
 
     pub fn style(&self, theme: &Theme) -> iced::theme::Style {
         let p = theme::palette(theme);
-        iced::theme::Style { background_color: p.base, text_color: p.text }
+        iced::theme::Style {
+            background_color: p.base,
+            text_color: p.text,
+        }
     }
 
     // -----------------------------------------------------------------
@@ -592,7 +628,9 @@ impl LimeDaw {
             };
             let sample = match &c.instrument {
                 Instrument::Sampler(p) => match &p.source {
-                    SampleSource::Model(m) => self.bank.get(&SampleBank::key_for_model(*m)).cloned(),
+                    SampleSource::Model(m) => {
+                        self.bank.get(&SampleBank::key_for_model(*m)).cloned()
+                    }
                     SampleSource::File { path } => self.bank.get(path).cloned(),
                 },
                 _ => None,
@@ -616,6 +654,8 @@ impl LimeDaw {
             self.sf_signature = slots;
         }
 
+        self.sync_effect_chains();
+
         let snapshot = Snapshot {
             schedule: compiled,
             channels,
@@ -634,6 +674,87 @@ impl LimeDaw {
         self.engine
             .send(EngineCmd::SetSnapshot(Arc::new(snapshot), working));
         self.needs_sync = false;
+    }
+
+    /// Send the engine any effect processor whose slot has changed shape.
+    ///
+    /// Constructing a reverb or a delay allocates megabytes of buffer, so it
+    /// happens here and the finished processor is handed over. Slots whose kind
+    /// is unchanged are left alone, which is what keeps a reverb tail alive
+    /// while another knob is being turned.
+    fn sync_effect_chains(&mut self) {
+        use crate::audio::core::FxTarget;
+        use crate::audio::effects::EffectProc;
+
+        let sample_rate = self.engine.sample_rate();
+
+        let mut channel_fx: Vec<(Id, Vec<&'static str>)> =
+            Vec::with_capacity(self.project.channels.len());
+        for (index, channel) in self.project.channels.iter().enumerate() {
+            let slugs: Vec<&'static str> = channel.effects.iter().map(|e| e.kind.slug()).collect();
+            // A channel that moved takes its chain's identity with it, so the
+            // comparison is against the same channel, not the same position.
+            let previous = self
+                .sent_channel_fx
+                .get(index)
+                .filter(|(id, _)| *id == channel.id)
+                .map(|(_, slugs)| slugs.as_slice())
+                .unwrap_or(&[]);
+            for (slot, slug) in slugs.iter().enumerate() {
+                if previous.get(slot) != Some(slug) {
+                    let proc = EffectProc::new(&channel.effects[slot].kind, sample_rate);
+                    self.engine.send(crate::audio::EngineCmd::InstallEffect {
+                        target: FxTarget::Channel(index),
+                        slot,
+                        proc: Box::new(proc),
+                    });
+                }
+            }
+            if previous.len() > slugs.len() {
+                self.engine.send(crate::audio::EngineCmd::TruncateChain {
+                    target: FxTarget::Channel(index),
+                    len: slugs.len(),
+                });
+            }
+            channel_fx.push((channel.id, slugs));
+        }
+
+        let mut mixer_fx: Vec<Vec<&'static str>> =
+            Vec::with_capacity(self.project.mixer.tracks.len());
+        for (index, track) in self.project.mixer.tracks.iter().enumerate() {
+            let slugs: Vec<&'static str> = track.effects.iter().map(|e| e.kind.slug()).collect();
+            let previous = self
+                .sent_mixer_fx
+                .get(index)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+            for (slot, slug) in slugs.iter().enumerate() {
+                if previous.get(slot) != Some(slug) {
+                    let proc = EffectProc::new(&track.effects[slot].kind, sample_rate);
+                    self.engine.send(crate::audio::EngineCmd::InstallEffect {
+                        target: FxTarget::Mixer(index),
+                        slot,
+                        proc: Box::new(proc),
+                    });
+                }
+            }
+            if previous.len() > slugs.len() {
+                self.engine.send(crate::audio::EngineCmd::TruncateChain {
+                    target: FxTarget::Mixer(index),
+                    len: slugs.len(),
+                });
+            }
+            mixer_fx.push(slugs);
+        }
+
+        self.sent_channel_fx = channel_fx;
+        self.sent_mixer_fx = mixer_fx;
+    }
+
+    /// Forget what the engine holds, so the next sync rebuilds every chain.
+    pub(crate) fn forget_effect_chains(&mut self) {
+        self.sent_channel_fx.clear();
+        self.sent_mixer_fx.clear();
     }
 
     /// Build one `Synthesizer` per soundfont channel, off the audio thread.
@@ -669,7 +790,7 @@ impl LimeDaw {
                 name: preset.get_name().trim().to_string(),
             });
         }
-        self.soundfont_presets.sort_by(|a, b| (a.bank, a.program).cmp(&(b.bank, b.program)));
+        self.soundfont_presets.sort_by_key(|a| (a.bank, a.program));
     }
 
     pub fn apply_soundfont(&mut self, path: PathBuf) -> Result<(), String> {
@@ -714,7 +835,11 @@ impl LimeDaw {
     // -----------------------------------------------------------------
 
     pub fn preview(&mut self, channel: Id, key: u8) {
-        if self.held_notes.iter().any(|h| h.channel == channel && h.key == key) {
+        if self
+            .held_notes
+            .iter()
+            .any(|h| h.channel == channel && h.key == key)
+        {
             return; // key repeat, or a second source holding the same note
         }
         self.engine.send(EngineCmd::NoteOn {
@@ -747,7 +872,11 @@ impl LimeDaw {
     /// Register a note the engine is already sounding so it still gets a
     /// release — used where the caller cannot send one, such as MCP.
     pub fn hold_preview(&mut self, channel: Id, key: u8) {
-        if self.held_notes.iter().any(|h| h.channel == channel && h.key == key) {
+        if self
+            .held_notes
+            .iter()
+            .any(|h| h.channel == channel && h.key == key)
+        {
             return;
         }
         self.held_notes.push(HeldNote {
@@ -807,7 +936,11 @@ impl LimeDaw {
         let length = self.project.pattern_length_beats(pattern_id).max(0.25);
         let raw = self.engine.status().position().rem_euclid(length);
         let snap = self.settings.grid_snap;
-        let start = if snap > 0.0 { (raw / snap).round() * snap } else { raw };
+        let start = if snap > 0.0 {
+            (raw / snap).round() * snap
+        } else {
+            raw
+        };
         let id = self.project.next_id();
         let velocity = self.settings.default_velocity;
         if let Some(pattern) = self.project.pattern_mut(pattern_id) {
@@ -838,13 +971,17 @@ impl LimeDaw {
         let length = self.project.pattern_length_beats(pattern_id).max(0.25);
         let now = self.engine.status().position().rem_euclid(length);
         // A note held across the loop point should not end up negative.
-        let played = if now >= held.start { now - held.start } else { length - held.start + now };
+        let played = if now >= held.start {
+            now - held.start
+        } else {
+            length - held.start + now
+        };
         let snap = self.settings.grid_snap.max(1.0 / 32.0);
         let quantised = ((played / snap).round() * snap).max(snap);
-        if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-            if let Some(note) = pattern.note_mut(note_id) {
-                note.length = quantised;
-            }
+        if let Some(pattern) = self.project.pattern_mut(pattern_id)
+            && let Some(note) = pattern.note_mut(note_id)
+        {
+            note.length = quantised;
         }
         self.touch();
     }
@@ -853,14 +990,42 @@ impl LimeDaw {
     pub fn keyboard_key(&self, character: &str) -> Option<u8> {
         // Two rows, laid out like a piano: the bottom row is the lower octave.
         const LOWER: [(&str, i32); 17] = [
-            ("z", 0), ("s", 1), ("x", 2), ("d", 3), ("c", 4), ("v", 5), ("g", 6),
-            ("b", 7), ("h", 8), ("n", 9), ("j", 10), ("m", 11), (",", 12),
-            ("l", 13), (".", 14), (";", 15), ("/", 16),
+            ("z", 0),
+            ("s", 1),
+            ("x", 2),
+            ("d", 3),
+            ("c", 4),
+            ("v", 5),
+            ("g", 6),
+            ("b", 7),
+            ("h", 8),
+            ("n", 9),
+            ("j", 10),
+            ("m", 11),
+            (",", 12),
+            ("l", 13),
+            (".", 14),
+            (";", 15),
+            ("/", 16),
         ];
         const UPPER: [(&str, i32); 17] = [
-            ("q", 12), ("2", 13), ("w", 14), ("3", 15), ("e", 16), ("r", 17), ("5", 18),
-            ("t", 19), ("6", 20), ("y", 21), ("7", 22), ("u", 23), ("i", 24),
-            ("9", 25), ("o", 26), ("0", 27), ("p", 28),
+            ("q", 12),
+            ("2", 13),
+            ("w", 14),
+            ("3", 15),
+            ("e", 16),
+            ("r", 17),
+            ("5", 18),
+            ("t", 19),
+            ("6", 20),
+            ("y", 21),
+            ("7", 22),
+            ("u", 23),
+            ("i", 24),
+            ("9", 25),
+            ("o", 26),
+            ("0", 27),
+            ("p", 28),
         ];
         let offset = LOWER
             .iter()
@@ -878,8 +1043,12 @@ impl LimeDaw {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             Message::Noop => {}
-            Message::Tick(now) => {
-                let dt = now.duration_since(self.last_tick).as_secs_f32().min(0.25);
+            Message::Tick => {
+                let now = Instant::now();
+                let dt = now
+                    .saturating_duration_since(self.last_tick)
+                    .as_secs_f32()
+                    .min(0.25);
                 self.last_tick = now;
                 if self.engine.silent {
                     self.engine.tick_silent(dt);
@@ -890,6 +1059,23 @@ impl LimeDaw {
                     self.sync_engine();
                 }
                 self.expire_previews();
+                #[cfg(target_arch = "wasm32")]
+                {
+                    // The browser has no window-resize event that reaches iced,
+                    // so the viewport is checked each frame and the canvas
+                    // resized when the page changes shape.
+                    if let Some(size) = crate::browser_viewport() {
+                        if (size.width - self.viewport.width).abs() > 1.0
+                            || (size.height - self.viewport.height).abs() > 1.0
+                        {
+                            self.viewport = size;
+                            return iced::window::latest().then(move |id| match id {
+                                Some(id) => iced::window::resize(id, size),
+                                None => Task::none(),
+                            });
+                        }
+                    }
+                }
                 if !self.status.is_empty() && self.status_at.elapsed() > Duration::from_secs(6) {
                     self.status.clear();
                 }
@@ -909,8 +1095,9 @@ impl LimeDaw {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
+        #[allow(unused_mut)]
         let mut subs = vec![
-            iced::time::every(Duration::from_millis(16)).map(Message::Tick),
+            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick),
             iced::system::theme_changes().map(Message::SystemTheme),
             iced::keyboard::listen().map(Message::Keyboard),
         ];
@@ -994,15 +1181,14 @@ impl LimeDaw {
 #[cfg(not(target_arch = "wasm32"))]
 fn mcp_jobs() -> impl iced::futures::Stream<Item = Message> {
     use iced::futures::StreamExt;
-    crate::mcp::server::job_stream()
-        .map(|job| Message::McpJob(Arc::new(Mutex::new(Some(job)))))
+    crate::mcp::server::job_stream().map(|job| Message::McpJob(Arc::new(Mutex::new(Some(job)))))
 }
 
 /// Handle a tool call and reply to the MCP client.
 pub fn respond(job: SharedJob, result: Result<Value, String>) {
-    if let Ok(mut slot) = job.lock() {
-        if let Some(job) = slot.take() {
-            job.respond(result);
-        }
+    if let Ok(mut slot) = job.lock()
+        && let Some(job) = slot.take()
+    {
+        job.respond(result);
     }
 }

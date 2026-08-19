@@ -134,19 +134,29 @@ fn sanitise_clamps_and_drops_dangling_references() {
     }
 }
 
+// `Project::next_id` is private, so the struct-update form clippy suggests
+// cannot be used here.
+#[allow(clippy::field_reassign_with_default)]
 #[test]
 fn project_survives_a_json_round_trip() {
     let mut original = Project::starter();
     original.name = "Round trip".into();
-    original.mixer.tracks[1].effects.push(Effect::from_slug("reverb").unwrap());
-    original.channels[0].effects.push(Effect::from_slug("compressor").unwrap());
+    original.mixer.tracks[1]
+        .effects
+        .push(Effect::from_slug("reverb").unwrap());
+    original.channels[0]
+        .effects
+        .push(Effect::from_slug("compressor").unwrap());
 
     let json = limedaw::persist::project_to_json(&original).unwrap();
     let restored = limedaw::persist::project_from_json(&json).unwrap();
 
     assert_eq!(restored.name, original.name);
     assert_eq!(restored.channels.len(), original.channels.len());
-    assert_eq!(restored.patterns[0].notes.len(), original.patterns[0].notes.len());
+    assert_eq!(
+        restored.patterns[0].notes.len(),
+        original.patterns[0].notes.len()
+    );
     assert_eq!(restored.mixer.tracks[1].effects.len(), 1);
     assert_eq!(restored.channels[0].effects.len(), 1);
 }
@@ -182,7 +192,11 @@ fn effect_parameters_are_clamped() {
         .into_iter()
         .find(|(name, _, _, _)| *name == "feedback")
         .unwrap();
-    assert!(feedback.1 <= 0.98, "feedback stays below unity: {}", feedback.1);
+    assert!(
+        feedback.1 <= 0.98,
+        "feedback stays below unity: {}",
+        feedback.1
+    );
     assert!(!effect.kind.set_param("nonsense", 1.0));
 }
 
@@ -215,7 +229,11 @@ fn a_long_clip_repeats_its_pattern() {
     project.add_clip(0, pattern, 0.0, 16.0);
 
     let compiled = schedule::compile(&project, PlayMode::Song);
-    assert_eq!(compiled.notes.len(), 4, "the pattern repeats to fill the clip");
+    assert_eq!(
+        compiled.notes.len(),
+        4,
+        "the pattern repeats to fill the clip"
+    );
     let starts: Vec<f64> = compiled.notes.iter().map(|n| n.beat).collect();
     assert_eq!(starts, vec![0.0, 4.0, 8.0, 12.0]);
 }
@@ -254,7 +272,11 @@ fn swing_delays_off_beat_sixteenths() {
     let compiled = schedule::compile(&project, PlayMode::Pattern(pattern));
     let starts: Vec<f64> = compiled.notes.iter().map(|n| n.beat).collect();
     assert!((starts[0] - 0.0).abs() < 1e-9, "on-beat 16ths stay put");
-    assert!(starts[1] > 0.25, "off-beat 16ths are pushed later: {}", starts[1]);
+    assert!(
+        starts[1] > 0.25,
+        "off-beat 16ths are pushed later: {}",
+        starts[1]
+    );
     assert!((starts[2] - 0.5).abs() < 1e-9);
 }
 
@@ -262,13 +284,24 @@ fn swing_delays_off_beat_sixteenths() {
 fn automation_lanes_interpolate() {
     let mut lane = AutomationLane::new(AutomationTarget::MasterVolume);
     lane.points.clear();
-    lane.points.push(AutomationPoint { beat: 0.0, value: 0.0, curve: Curve::Linear });
-    lane.points.push(AutomationPoint { beat: 4.0, value: 1.0, curve: Curve::Linear });
+    lane.points.push(AutomationPoint {
+        beat: 0.0,
+        value: 0.0,
+        curve: Curve::Linear,
+    });
+    lane.points.push(AutomationPoint {
+        beat: 4.0,
+        value: 1.0,
+        curve: Curve::Linear,
+    });
 
     assert_eq!(lane.value_at(-1.0), Some(0.0), "before the first point");
     assert_eq!(lane.value_at(9.0), Some(1.0), "after the last point");
     let midpoint = lane.value_at(2.0).unwrap();
-    assert!((midpoint - 0.5).abs() < 1e-9, "halfway is halfway: {midpoint}");
+    assert!(
+        (midpoint - 0.5).abs() < 1e-9,
+        "halfway is halfway: {midpoint}"
+    );
 
     // A hold curve should not move until the next point.
     lane.points[0].curve = Curve::Hold;
@@ -292,9 +325,16 @@ fn a_drum_pattern_makes_sound() {
     let pattern = project.patterns[0].id;
     let out = render(&project, PlayMode::Pattern(pattern), 2.0);
 
-    assert!(peak(&out) > 0.05, "the starter beat is audible: peak {}", peak(&out));
+    assert!(
+        peak(&out) > 0.05,
+        "the starter beat is audible: peak {}",
+        peak(&out)
+    );
     assert!(peak(&out) <= 1.05, "and it does not blow past full scale");
-    assert!(out.iter().all(|s| s.is_finite()), "no NaNs reach the output");
+    assert!(
+        out.iter().all(|s| s.is_finite()),
+        "no NaNs reach the output"
+    );
 }
 
 #[test]
@@ -341,7 +381,10 @@ fn master_volume_scales_the_output() {
     quiet_project.master_volume = 0.1;
     let quiet = rms(&render(&quiet_project, PlayMode::Pattern(pattern), 1.5));
 
-    assert!(quiet < loud * 0.5, "pulling the master down is audible: {quiet} vs {loud}");
+    assert!(
+        quiet < loud * 0.5,
+        "pulling the master down is audible: {quiet} vs {loud}"
+    );
 }
 
 #[test]
@@ -358,8 +401,15 @@ fn effects_stay_stable_under_extreme_settings() {
     }
     let pattern = project.patterns[0].id;
     let out = render(&project, PlayMode::Pattern(pattern), 2.0);
-    assert!(out.iter().all(|s| s.is_finite()), "no NaN or infinity escapes the chain");
-    assert!(peak(&out) <= 1.2, "the safety limiter holds: peak {}", peak(&out));
+    assert!(
+        out.iter().all(|s| s.is_finite()),
+        "no NaN or infinity escapes the chain"
+    );
+    assert!(
+        peak(&out) <= 1.2,
+        "the safety limiter holds: peak {}",
+        peak(&out)
+    );
 }
 
 #[test]
@@ -369,7 +419,10 @@ fn the_transport_advances_while_playing() {
     bank.populate_models(SR);
     let mut core = EngineCore::new(SR);
     let pattern = project.patterns[0].id;
-    install(&mut core, snapshot_of(&project, &bank, PlayMode::Pattern(pattern)));
+    install(
+        &mut core,
+        snapshot_of(&project, &bank, PlayMode::Pattern(pattern)),
+    );
     core.handle(EngineCmd::Play);
 
     let mut out = vec![0.0f32; 4096];
@@ -397,7 +450,10 @@ fn looping_wraps_the_playhead() {
     let mut bank = SampleBank::default();
     bank.populate_models(SR);
     let mut core = EngineCore::new(SR);
-    install(&mut core, snapshot_of(&project, &bank, PlayMode::Pattern(pattern)));
+    install(
+        &mut core,
+        snapshot_of(&project, &bank, PlayMode::Pattern(pattern)),
+    );
     core.handle(EngineCmd::SetLoopEnabled(true));
     core.handle(EngineCmd::Play);
 
@@ -419,7 +475,10 @@ fn panic_stops_every_voice() {
     bank.populate_models(SR);
     let mut core = EngineCore::new(SR);
     let pattern = project.patterns[0].id;
-    install(&mut core, snapshot_of(&project, &bank, PlayMode::Pattern(pattern)));
+    install(
+        &mut core,
+        snapshot_of(&project, &bank, PlayMode::Pattern(pattern)),
+    );
     core.handle(EngineCmd::Play);
 
     let mut out = vec![0.0f32; 8192];
@@ -437,7 +496,10 @@ fn changing_the_snapshot_mid_flight_does_not_panic() {
     bank.populate_models(SR);
     let mut core = EngineCore::new(SR);
     let pattern = project.patterns[0].id;
-    install(&mut core, snapshot_of(&project, &bank, PlayMode::Pattern(pattern)));
+    install(
+        &mut core,
+        snapshot_of(&project, &bank, PlayMode::Pattern(pattern)),
+    );
     core.handle(EngineCmd::Play);
 
     let mut out = vec![0.0f32; 2048];
@@ -511,11 +573,13 @@ fn malformed_midi_is_rejected_not_fatal() {
 
 #[test]
 fn settings_round_trip_through_toml() {
-    let mut settings = limedaw::config::Settings::default();
-    settings.theme = limedaw::theme::ThemeChoice::Dark;
-    settings.renderer = limedaw::config::RendererChoice::Software;
-    settings.soundfont = Some("/tmp/example.sf2".into());
-    settings.recent_projects = vec!["/tmp/a.lime".into(), "/tmp/b.lime".into()];
+    let settings = limedaw::config::Settings {
+        theme: limedaw::theme::ThemeChoice::Dark,
+        renderer: limedaw::config::RendererChoice::Software,
+        soundfont: Some("/tmp/example.sf2".into()),
+        recent_projects: vec!["/tmp/a.lime".into(), "/tmp/b.lime".into()],
+        ..limedaw::config::Settings::default()
+    };
 
     let text = toml::to_string_pretty(&settings).expect("settings serialise to TOML");
     let restored: limedaw::config::Settings = toml::from_str(&text).expect("and parse back");
@@ -541,15 +605,27 @@ fn a_settings_file_with_missing_keys_still_loads() {
 #[test]
 fn every_declared_tool_has_a_schema() {
     let tools = limedaw::mcp::tool_definitions();
-    assert!(tools.len() >= 60, "the tool surface is broad: {}", tools.len());
+    assert!(
+        tools.len() >= 60,
+        "the tool surface is broad: {}",
+        tools.len()
+    );
     for tool in &tools {
-        assert!(!tool.description.is_empty(), "{} has a description", tool.name);
+        assert!(
+            !tool.description.is_empty(),
+            "{} has a description",
+            tool.name
+        );
         assert_eq!(
             tool.schema["type"], "object",
             "{} takes an object",
             tool.name
         );
-        assert!(tool.schema.get("properties").is_some(), "{} declares properties", tool.name);
+        assert!(
+            tool.schema.get("properties").is_some(),
+            "{} declares properties",
+            tool.name
+        );
     }
     let mut names: Vec<&str> = tools.iter().map(|t| t.name).collect();
     names.sort_unstable();
@@ -562,7 +638,10 @@ fn every_declared_tool_has_a_schema() {
 fn the_client_configuration_is_valid_json() {
     let config = limedaw::mcp::client_config_json("/usr/bin/limedaw", "/tmp/limedaw.sock");
     let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
-    assert_eq!(parsed["mcpServers"]["limedaw"]["command"], "/usr/bin/limedaw");
+    assert_eq!(
+        parsed["mcpServers"]["limedaw"]["command"],
+        "/usr/bin/limedaw"
+    );
     assert_eq!(parsed["mcpServers"]["limedaw"]["args"][0], "--mcp-stdio");
 
     let socat = limedaw::mcp::client_config_socat("/tmp/limedaw.sock");

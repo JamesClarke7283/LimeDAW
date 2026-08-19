@@ -9,35 +9,37 @@
 mod native {
     use std::path::{Path, PathBuf};
 
-    use directories::{ProjectDirs, UserDirs};
+    use directories::{BaseDirs, UserDirs};
 
     pub const APP_NAME: &str = "LimeDAW";
     pub const PROJECTS_FOLDER: &str = "LimeProjects";
 
-    fn project_dirs() -> Option<ProjectDirs> {
-        // On Linux this resolves to ~/.config/LimeDAW and ~/.local/share/LimeDAW,
-        // which is exactly where the MCP socket is expected to appear.
-        ProjectDirs::from("", "", APP_NAME)
+    // `ProjectDirs` lowercases the application name to follow XDG's house
+    // style, which would put the socket in `~/.local/share/limedaw`. The name
+    // is spelled `LimeDAW` everywhere else, so the platform base directories
+    // are used directly and the folder name is appended verbatim.
+    fn base() -> Option<BaseDirs> {
+        BaseDirs::new()
     }
 
     /// `~/.config/LimeDAW` (or the platform equivalent).
     pub fn config_dir() -> PathBuf {
-        project_dirs()
-            .map(|d| d.config_dir().to_path_buf())
+        base()
+            .map(|d| d.config_dir().join(APP_NAME))
             .unwrap_or_else(|| PathBuf::from(".limedaw"))
     }
 
     /// `~/.local/share/LimeDAW` (or the platform equivalent).
     pub fn data_dir() -> PathBuf {
-        project_dirs()
-            .map(|d| d.data_dir().to_path_buf())
+        base()
+            .map(|d| d.data_dir().join(APP_NAME))
             .unwrap_or_else(|| PathBuf::from(".limedaw/data"))
     }
 
     /// `~/.cache/LimeDAW` (or the platform equivalent).
     pub fn cache_dir() -> PathBuf {
-        project_dirs()
-            .map(|d| d.cache_dir().to_path_buf())
+        base()
+            .map(|d| d.cache_dir().join(APP_NAME))
             .unwrap_or_else(|| PathBuf::from(".limedaw/cache"))
     }
 

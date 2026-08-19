@@ -66,7 +66,12 @@ pub struct RpcError {
 
 impl Response {
     pub fn ok(id: Value, result: Value) -> Self {
-        Self { jsonrpc: "2.0", id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0",
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
 
     pub fn err(id: Value, code: i32, message: impl Into<String>) -> Self {
@@ -74,7 +79,11 @@ impl Response {
             jsonrpc: "2.0",
             id,
             result: None,
-            error: Some(RpcError { code, message: message.into(), data: None }),
+            error: Some(RpcError {
+                code,
+                message: message.into(),
+                data: None,
+            }),
         }
     }
 }
@@ -193,3 +202,9 @@ pub fn cli_command(exe: &str, socket: &str) -> String {
 pub mod server;
 #[cfg(not(target_arch = "wasm32"))]
 pub use server::{ServerHandle, stdio_bridge};
+
+/// A stand-in for the browser build, which has no unix sockets. It is never
+/// constructed; it exists so the application can hold an `Option<ServerHandle>`
+/// without cfg noise spreading through the interface.
+#[cfg(target_arch = "wasm32")]
+pub enum ServerHandle {}

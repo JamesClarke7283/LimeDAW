@@ -29,9 +29,18 @@ impl Reverb {
         let s = |n: usize| ((n as f32 * scale) as usize).max(4);
         Self {
             combs_l: COMB_TUNING.iter().map(|&n| Comb::new(s(n))).collect(),
-            combs_r: COMB_TUNING.iter().map(|&n| Comb::new(s(n + STEREO_SPREAD))).collect(),
-            aps_l: ALLPASS_TUNING.iter().map(|&n| AllPassDelay::new(s(n), 0.5)).collect(),
-            aps_r: ALLPASS_TUNING.iter().map(|&n| AllPassDelay::new(s(n + STEREO_SPREAD), 0.5)).collect(),
+            combs_r: COMB_TUNING
+                .iter()
+                .map(|&n| Comb::new(s(n + STEREO_SPREAD)))
+                .collect(),
+            aps_l: ALLPASS_TUNING
+                .iter()
+                .map(|&n| AllPassDelay::new(s(n), 0.5))
+                .collect(),
+            aps_r: ALLPASS_TUNING
+                .iter()
+                .map(|&n| AllPassDelay::new(s(n + STEREO_SPREAD), 0.5))
+                .collect(),
             predelay_l: DelayLine::new((sr * 0.25) as usize),
             predelay_r: DelayLine::new((sr * 0.25) as usize),
         }
@@ -70,7 +79,10 @@ impl Reverb {
         let wet_r = mid + (out_r - mid) * w;
 
         let mix = p.mix.clamp(0.0, 1.0);
-        (l * (1.0 - mix) + wet_l * mix * 3.0, r * (1.0 - mix) + wet_r * mix * 3.0)
+        (
+            l * (1.0 - mix) + wet_l * mix * 3.0,
+            r * (1.0 - mix) + wet_r * mix * 3.0,
+        )
     }
 }
 
@@ -101,7 +113,11 @@ impl Delay {
     }
 
     fn process(&mut self, l: f32, r: f32, p: &DelayParams, sr: f32, spb: f32) -> (f32, f32) {
-        let target = if p.sync { p.time * spb * sr } else { p.time * sr };
+        let target = if p.sync {
+            p.time * spb * sr
+        } else {
+            p.time * sr
+        };
         let target = target.clamp(8.0, self.line_l.capacity() as f32 - 4.0);
         if !self.primed {
             self.time.jump(target);
@@ -138,7 +154,11 @@ pub struct Chorus {
 impl Chorus {
     fn new(sr: f32) -> Self {
         let max = (sr * 0.1) as usize;
-        Self { line_l: DelayLine::new(max), line_r: DelayLine::new(max), phase: 0.0 }
+        Self {
+            line_l: DelayLine::new(max),
+            line_r: DelayLine::new(max),
+            phase: 0.0,
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &ChorusParams, sr: f32) -> (f32, f32) {
@@ -166,7 +186,10 @@ impl Chorus {
         wet_r *= norm;
 
         let mix = p.mix.clamp(0.0, 1.0);
-        (l * (1.0 - mix * 0.5) + wet_l * mix, r * (1.0 - mix * 0.5) + wet_r * mix)
+        (
+            l * (1.0 - mix * 0.5) + wet_l * mix,
+            r * (1.0 - mix * 0.5) + wet_r * mix,
+        )
     }
 }
 
@@ -177,7 +200,10 @@ pub struct Distortion {
 
 impl Distortion {
     fn new() -> Self {
-        Self { tone_l: OnePole::default(), tone_r: OnePole::default() }
+        Self {
+            tone_l: OnePole::default(),
+            tone_r: OnePole::default(),
+        }
     }
 
     fn shape(x: f32, kind: u8) -> f32 {
@@ -211,7 +237,11 @@ pub struct FilterFx {
 
 impl FilterFx {
     fn new() -> Self {
-        Self { svf_l: Svf::default(), svf_r: Svf::default(), follower: OnePole::default() }
+        Self {
+            svf_l: Svf::default(),
+            svf_r: Svf::default(),
+            follower: OnePole::default(),
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &FilterParams, sr: f32) -> (f32, f32) {
@@ -248,7 +278,10 @@ impl Eq {
             mid_r: Biquad::default(),
             high_l: Biquad::default(),
             high_r: Biquad::default(),
-            cached: EqParams { low_gain: f32::NAN, ..Default::default() },
+            cached: EqParams {
+                low_gain: f32::NAN,
+                ..Default::default()
+            },
             sr,
         };
         eq.retune(&EqParams::default());
@@ -269,8 +302,12 @@ impl Eq {
         if *p != self.cached {
             self.retune(p);
         }
-        let out_l = self.high_l.process(self.mid_l.process(self.low_l.process(l)));
-        let out_r = self.high_r.process(self.mid_r.process(self.low_r.process(r)));
+        let out_l = self
+            .high_l
+            .process(self.mid_l.process(self.low_l.process(l)));
+        let out_r = self
+            .high_r
+            .process(self.mid_r.process(self.low_r.process(r)));
         (out_l, out_r)
     }
 }
@@ -282,7 +319,10 @@ pub struct Compressor {
 
 impl Compressor {
     fn new() -> Self {
-        Self { env: 0.0, gain_reduction: 1.0 }
+        Self {
+            env: 0.0,
+            gain_reduction: 1.0,
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &CompressorParams, sr: f32) -> (f32, f32) {
@@ -343,7 +383,11 @@ impl Limiter {
     fn process(&mut self, l: f32, r: f32, p: &LimiterParams, sr: f32) -> (f32, f32) {
         let ceiling = db_to_gain(p.ceiling.clamp(-24.0, 0.0));
         let peak = l.abs().max(r.abs());
-        let target = if peak > ceiling { ceiling / peak.max(1e-9) } else { 1.0 };
+        let target = if peak > ceiling {
+            ceiling / peak.max(1e-9)
+        } else {
+            1.0
+        };
         let release = (-1.0 / (p.release.max(1.0) * 0.001 * sr)).exp();
         if target < self.env || self.env == 0.0 {
             self.env = target;
@@ -372,7 +416,11 @@ pub struct Bitcrush {
 
 impl Bitcrush {
     fn new() -> Self {
-        Self { hold_l: 0.0, hold_r: 0.0, counter: 0.0 }
+        Self {
+            hold_l: 0.0,
+            hold_r: 0.0,
+            counter: 0.0,
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &BitcrushParams) -> (f32, f32) {
@@ -386,7 +434,10 @@ impl Bitcrush {
             self.hold_r = (r * steps).round() / steps;
         }
         let mix = p.mix.clamp(0.0, 1.0);
-        (l * (1.0 - mix) + self.hold_l * mix, r * (1.0 - mix) + self.hold_r * mix)
+        (
+            l * (1.0 - mix) + self.hold_l * mix,
+            r * (1.0 - mix) + self.hold_r * mix,
+        )
     }
 }
 
@@ -475,13 +526,20 @@ impl Flanger {
 
         let base = 0.001 * sr;
         let depth = p.depth.clamp(0.0, 1.0) * 0.006 * sr;
-        let wl = self.line_l.read(base + depth * ((self.phase * TAU).sin() * 0.5 + 0.5));
-        let wr = self.line_r.read(base + depth * (((self.phase + 0.5) * TAU).sin() * 0.5 + 0.5));
+        let wl = self
+            .line_l
+            .read(base + depth * ((self.phase * TAU).sin() * 0.5 + 0.5));
+        let wr = self
+            .line_r
+            .read(base + depth * (((self.phase + 0.5) * TAU).sin() * 0.5 + 0.5));
         self.fb_l = wl;
         self.fb_r = wr;
 
         let mix = p.mix.clamp(0.0, 1.0);
-        (l * (1.0 - mix * 0.5) + wl * mix, r * (1.0 - mix * 0.5) + wr * mix)
+        (
+            l * (1.0 - mix * 0.5) + wl * mix,
+            r * (1.0 - mix * 0.5) + wr * mix,
+        )
     }
 }
 
@@ -493,7 +551,11 @@ pub struct Gate {
 
 impl Gate {
     fn new() -> Self {
-        Self { env: 0.0, gain: 0.0, hold_counter: 0.0 }
+        Self {
+            env: 0.0,
+            gain: 0.0,
+            hold_counter: 0.0,
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &GateParams, sr: f32) -> (f32, f32) {
@@ -505,8 +567,16 @@ impl Gate {
         } else if self.hold_counter > 0.0 {
             self.hold_counter -= 1.0;
         }
-        let target = if open || self.hold_counter > 0.0 { 1.0 } else { 0.0 };
-        let time = if target > self.gain { p.attack } else { p.release };
+        let target = if open || self.hold_counter > 0.0 {
+            1.0
+        } else {
+            0.0
+        };
+        let time = if target > self.gain {
+            p.attack
+        } else {
+            p.release
+        };
         let coeff = 1.0 - (-1.0 / (time.max(0.1) * 0.001 * sr)).exp();
         self.gain += (target - self.gain) * coeff;
         (l * self.gain, r * self.gain)
@@ -522,7 +592,12 @@ pub struct Stereo {
 
 impl Stereo {
     fn new(sr: f32) -> Self {
-        Self { bass_l: Biquad::default(), bass_r: Biquad::default(), cached_freq: -1.0, sr }
+        Self {
+            bass_l: Biquad::default(),
+            bass_r: Biquad::default(),
+            cached_freq: -1.0,
+            sr,
+        }
     }
 
     fn process(&mut self, l: f32, r: f32, p: &StereoParams) -> (f32, f32) {
@@ -627,22 +702,56 @@ impl EffectProc {
     }
 }
 
-/// A chain of effect processors kept in sync with a model effect list.
+/// A chain of effect processors.
+///
+/// The chain never builds a processor itself: a reverb or delay allocates
+/// megabytes of buffer, and the audio thread must not do that. Processors are
+/// constructed on the control thread and installed here, and discarded ones go
+/// out through the trash so they are freed off-thread too.
 #[derive(Default)]
 pub struct EffectChain {
     procs: Vec<EffectProc>,
 }
 
 impl EffectChain {
-    /// Rebuild any slot whose kind no longer matches, leaving the rest alone so
-    /// reverb tails survive a knob tweak elsewhere in the chain.
-    pub fn sync(&mut self, effects: &[crate::model::Effect], sr: f32) {
-        self.procs.truncate(effects.len());
-        for (i, e) in effects.iter().enumerate() {
-            match self.procs.get(i) {
-                Some(p) if p.matches(&e.kind) => {}
-                Some(_) => self.procs[i] = EffectProc::new(&e.kind, sr),
-                None => self.procs.push(EffectProc::new(&e.kind, sr)),
+    pub fn len(&self) -> usize {
+        self.procs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.procs.is_empty()
+    }
+
+    /// Whether the chain already holds the right processor for every slot.
+    pub fn matches(&self, effects: &[crate::model::Effect]) -> bool {
+        self.procs.len() == effects.len()
+            && self
+                .procs
+                .iter()
+                .zip(effects.iter())
+                .all(|(p, e)| p.matches(&e.kind))
+    }
+
+    /// Put a prepared processor into a slot, retiring whatever was there.
+    ///
+    /// Slots are filled in order. A slot past the end would leave a hole in the
+    /// chain, so it is ignored — its own install is on the way.
+    pub fn install(&mut self, slot: usize, proc: EffectProc, trash: &mut Vec<crate::audio::Trash>) {
+        match slot.cmp(&self.procs.len()) {
+            std::cmp::Ordering::Less => {
+                let old = std::mem::replace(&mut self.procs[slot], proc);
+                trash.push(crate::audio::Trash::Effect(Box::new(old)));
+            }
+            std::cmp::Ordering::Equal => self.procs.push(proc),
+            std::cmp::Ordering::Greater => {}
+        }
+    }
+
+    /// Shorten the chain, handing the removed processors to the trash.
+    pub fn truncate(&mut self, len: usize, trash: &mut Vec<crate::audio::Trash>) {
+        while self.procs.len() > len {
+            if let Some(old) = self.procs.pop() {
+                trash.push(crate::audio::Trash::Effect(Box::new(old)));
             }
         }
     }

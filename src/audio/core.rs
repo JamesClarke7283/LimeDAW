@@ -25,6 +25,14 @@ pub const MAX_VOICES: usize = 192;
 /// soundfont, so each gets its own mixer routing and effects.
 pub const MAX_SF_SLOTS: usize = 16;
 
+/// Which effect chain a command addresses. Indices refer to positions in the
+/// current snapshot, which is why chains are resent whenever those move.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FxTarget {
+    Channel(usize),
+    Mixer(usize),
+}
+
 /// Things the control side asks the engine to do.
 pub enum EngineCmd {
     Play,
@@ -36,16 +44,37 @@ pub enum EngineCmd {
     SetMetronome(bool),
     /// Live tempo override, applied without recompiling the schedule.
     SetTempo(f64),
-    NoteOn { channel: Id, key: u8, velocity: f32 },
-    NoteOff { channel: Id, key: u8 },
+    NoteOn {
+        channel: Id,
+        key: u8,
+        velocity: f32,
+    },
+    NoteOff {
+        channel: Id,
+        key: u8,
+    },
     AllNotesOff,
     /// Hand over a prepared soundfont synthesiser, built off the audio thread.
-    SetSynth { slot: usize, synth: Option<Box<Synthesizer>> },
+    SetSynth {
+        slot: usize,
+        synth: Option<Box<Synthesizer>>,
+    },
     /// Swap in a new compiled snapshot, together with the mutable working copy
     /// built for it. Both are prepared on the control thread so the audio
     /// thread only ever swaps pointers.
     SetSnapshot(Arc<Snapshot>, Box<Working>),
     SetMode(PlayMode),
+    /// Put a processor built on the control thread into a chain slot.
+    InstallEffect {
+        target: FxTarget,
+        slot: usize,
+        proc: Box<crate::audio::effects::EffectProc>,
+    },
+    /// Shorten a chain to `len` slots.
+    TruncateChain {
+        target: FxTarget,
+        len: usize,
+    },
     Panic,
 }
 
@@ -55,6 +84,7 @@ pub enum Trash {
     Snapshot(Arc<Snapshot>),
     Working(Box<Working>),
     Synth(Box<Synthesizer>),
+    Effect(Box<crate::audio::effects::EffectProc>),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,7 +198,7 @@ pub struct Meter {
 pub struct EngineCore {
     sample_rate: f32,
     snapshot: Arc<Snapshot>,
-    working: Working,
+    working: Box<Working>,
     pub transport: Transport,
     pool: VoicePool,
     pending_offs: Vec<PendingOff>,
@@ -198,6 +228,20 @@ pub struct EngineCore {
     pub trash: Vec<Trash>,
     /// A tempo override coming from the transport rather than the project.
     tempo_override: Option<f64>,
+    /// The snapshot generation the effect chains were last built for.
+    chains_generation: u64,
+    /// The snapshot generation the live-track set was worked out for.
+    live_generation: u64,
+    /// Which mixer tracks carry signal. Silent, effect-free inserts are skipped
+    /// entirely, which is most of them in a typical project. Recomputed only
+    /// when the snapshot changes.
+    live_tracks: Vec<usize>,
+    /// Whether each track is fed by a channel or a send, cached alongside.
+    track_fed: Vec<bool>,
+    /// How many frames have passed with nothing sounding. Once the longest
+    /// plausible effect tail has run out there is nothing left to compute, and
+    /// the engine can hand back silence for free until something happens.
+    idle_frames: usize,
 }
 
 impl EngineCore {
@@ -207,7 +251,7 @@ impl EngineCore {
         Self {
             sample_rate,
             snapshot,
-            working: Working::default(),
+            working: Box::new(Working::default()),
             transport: Transport::default(),
             pool: VoicePool::new(MAX_VOICES),
             pending_offs: Vec::with_capacity(MAX_VOICES * 2),
@@ -221,14 +265,23 @@ impl EngineCore {
             chan_l: Vec::new(),
             chan_r: Vec::new(),
             synths: (0..MAX_SF_SLOTS).map(|_| None).collect(),
-            sf_buf_l: (0..MAX_SF_SLOTS).map(|_| vec![0.0; CONTROL_BLOCK]).collect(),
-            sf_buf_r: (0..MAX_SF_SLOTS).map(|_| vec![0.0; CONTROL_BLOCK]).collect(),
+            sf_buf_l: (0..MAX_SF_SLOTS)
+                .map(|_| vec![0.0; CONTROL_BLOCK])
+                .collect(),
+            sf_buf_r: (0..MAX_SF_SLOTS)
+                .map(|_| vec![0.0; CONTROL_BLOCK])
+                .collect(),
             meters: vec![Meter::default(); track_count],
             metronome_phase: 0.0,
             metronome_env: 0.0,
             last_click_beat: -1.0,
             trash: Vec::with_capacity(16),
             tempo_override: None,
+            chains_generation: u64::MAX,
+            live_generation: u64::MAX,
+            live_tracks: Vec::with_capacity(track_count),
+            track_fed: vec![false; track_count],
+            idle_frames: usize::MAX,
         }
     }
 
@@ -239,9 +292,9 @@ impl EngineCore {
     pub fn set_sample_rate(&mut self, sr: f32) {
         if (sr - self.sample_rate).abs() > 0.5 {
             self.sample_rate = sr;
-            // Force every effect to be rebuilt at the new rate.
-            self.channel_chains.clear();
-            self.mixer_chains.clear();
+            // Every effect has to be rebuilt at the new rate; the control side
+            // notices the empty chains and sends fresh processors.
+            self.reset_effects();
             self.pool.kill_all();
         }
     }
@@ -259,6 +312,9 @@ impl EngineCore {
     }
 
     pub fn handle(&mut self, cmd: EngineCmd) {
+        // Any command at all might start something sounding, so come out of
+        // the idle fast path and let the next block decide afresh.
+        self.idle_frames = 0;
         match cmd {
             EngineCmd::Play => {
                 self.transport.playing = true;
@@ -292,7 +348,11 @@ impl EngineCore {
             EngineCmd::SetTempo(t) => {
                 self.tempo_override = Some(t.clamp(20.0, 999.0));
             }
-            EngineCmd::NoteOn { channel, key, velocity } => {
+            EngineCmd::NoteOn {
+                channel,
+                key,
+                velocity,
+            } => {
                 self.note_on(channel, None, key, velocity, 0.0, 0.0);
             }
             EngineCmd::NoteOff { channel, key } => {
@@ -310,19 +370,21 @@ impl EngineCore {
             EngineCmd::SetSnapshot(snapshot, working) => {
                 let old = std::mem::replace(&mut self.snapshot, snapshot);
                 self.trash.push(Trash::Snapshot(old));
-                let old_working = std::mem::replace(&mut self.working, *working);
-                self.trash.push(Trash::Working(Box::new(old_working)));
+                // Swap the boxes rather than unboxing, so nothing is allocated
+                // here just to be thrown away.
+                let old_working = std::mem::replace(&mut self.working, working);
+                self.trash.push(Trash::Working(old_working));
                 self.tempo_override = None;
                 self.resize_buffers();
                 self.cursor = self.snapshot.schedule.seek(self.transport.position);
                 // Re-point sounding voices at their channel's new position, and
                 // drop any whose channel has gone away.
-                let ids: Vec<Id> = self.snapshot.channels.iter().map(|c| c.id).collect();
+                let snapshot = self.snapshot.clone();
                 for v in &mut self.pool.voices {
                     if !v.active {
                         continue;
                     }
-                    match ids.iter().position(|id| *id == v.channel) {
+                    match snapshot.channels.iter().position(|c| c.id == v.channel) {
                         Some(index) => v.slot = index,
                         None => v.kill(),
                     }
@@ -335,6 +397,24 @@ impl EngineCore {
                 self.pending_offs.clear();
                 self.release_all(true);
             }
+            EngineCmd::InstallEffect { target, slot, proc } => {
+                let chain = match target {
+                    FxTarget::Channel(i) => self.channel_chains.get_mut(i),
+                    FxTarget::Mixer(i) => self.mixer_chains.get_mut(i),
+                };
+                if let Some(chain) = chain {
+                    chain.install(slot, *proc, &mut self.trash);
+                }
+            }
+            EngineCmd::TruncateChain { target, len } => {
+                let chain = match target {
+                    FxTarget::Channel(i) => self.channel_chains.get_mut(i),
+                    FxTarget::Mixer(i) => self.mixer_chains.get_mut(i),
+                };
+                if let Some(chain) = chain {
+                    chain.truncate(len, &mut self.trash);
+                }
+            }
             EngineCmd::Panic => {
                 self.pool.kill_all();
                 self.pending_offs.clear();
@@ -346,9 +426,16 @@ impl EngineCore {
         }
     }
 
+    /// Silence every effect's state without freeing anything on this thread.
     fn reset_effects(&mut self) {
-        self.channel_chains.clear();
-        self.mixer_chains.clear();
+        for chain in self
+            .channel_chains
+            .iter_mut()
+            .chain(self.mixer_chains.iter_mut())
+        {
+            chain.truncate(0, &mut self.trash);
+        }
+        self.chains_generation = u64::MAX;
     }
 
     fn release_all(&mut self, immediate: bool) {
@@ -401,11 +488,22 @@ impl EngineCore {
             self.mixer_chains.push(EffectChain::default());
         }
         self.mixer_chains.truncate(tracks);
-        for (i, chain) in self.channel_chains.iter_mut().enumerate() {
-            chain.sync(&self.working.channel_effects[i], self.sample_rate);
-        }
-        for (i, chain) in self.mixer_chains.iter_mut().enumerate() {
-            chain.sync(&self.working.mixer_effects[i], self.sample_rate);
+        // Chains that are now longer than their effect list are trimmed here;
+        // building the processors themselves belongs to the control thread.
+        if self.chains_generation != self.snapshot.generation {
+            for (i, chain) in self.channel_chains.iter_mut().enumerate() {
+                let wanted = self.working.channel_effects[i].len();
+                if chain.len() > wanted {
+                    chain.truncate(wanted, &mut self.trash);
+                }
+            }
+            for (i, chain) in self.mixer_chains.iter_mut().enumerate() {
+                let wanted = self.working.mixer_effects[i].len();
+                if chain.len() > wanted {
+                    chain.truncate(wanted, &mut self.trash);
+                }
+            }
+            self.chains_generation = self.snapshot.generation;
         }
     }
 
@@ -413,7 +511,15 @@ impl EngineCore {
         self.snapshot.channels.iter().position(|c| c.id == id)
     }
 
-    fn note_on(&mut self, channel: Id, uid: Option<u32>, key: u8, velocity: f32, pan: f32, fine: f32) {
+    fn note_on(
+        &mut self,
+        channel: Id,
+        uid: Option<u32>,
+        key: u8,
+        velocity: f32,
+        pan: f32,
+        fine: f32,
+    ) {
         let Some(index) = self.channel_index(channel) else {
             return;
         };
@@ -428,15 +534,15 @@ impl EngineCore {
         match &self.working.channel_instrument[index] {
             Instrument::Synth(patch) => {
                 let patch = patch.clone();
-                if patch.mono {
-                    if let Some(vi) = self.pool.mono_voice(channel) {
-                        // A mono channel reuses its sounding voice, so glide and
-                        // legato behave the way a monosynth should.
-                        self.pool.voices[vi].glide_to(key, transpose, fine, &patch, sr);
-                        self.pool.voices[vi].velocity = velocity;
-                        self.pool.voices[vi].note = uid;
-                        return;
-                    }
+                if patch.mono
+                    && let Some(vi) = self.pool.mono_voice(channel)
+                {
+                    // A mono channel reuses its sounding voice, so glide and
+                    // legato behave the way a monosynth should.
+                    self.pool.voices[vi].glide_to(key, transpose, fine, &patch, sr);
+                    self.pool.voices[vi].velocity = velocity;
+                    self.pool.voices[vi].note = uid;
+                    return;
                 }
                 let age = self.pool.tick();
                 let slot = self.pool.allocate();
@@ -450,7 +556,8 @@ impl EngineCore {
                 let age = self.pool.tick();
                 let slot = self.pool.allocate();
                 self.pool.voices[slot].start_sampler(
-                    channel, index, uid, key, velocity, pan, fine, transpose, &patch, sample, sr, age,
+                    channel, index, uid, key, velocity, pan, fine, transpose, &patch, sample, sr,
+                    age,
                 );
             }
             Instrument::SoundFont(patch) => {
@@ -567,23 +674,26 @@ impl EngineCore {
                         set_effect_normalised(fx, param.as_str(), v);
                     }
                 }
-                AutomationTarget::ChannelEffect { channel, slot, param } => {
-                    if let Some(i) = snapshot.channels.iter().position(|c| c.id == channel) {
-                        if let Some(fx) = self
+                AutomationTarget::ChannelEffect {
+                    channel,
+                    slot,
+                    param,
+                } => {
+                    if let Some(i) = snapshot.channels.iter().position(|c| c.id == channel)
+                        && let Some(fx) = self
                             .working
                             .channel_effects
                             .get_mut(i)
                             .and_then(|c| c.get_mut(slot))
-                        {
-                            set_effect_normalised(fx, param.as_str(), v);
-                        }
+                    {
+                        set_effect_normalised(fx, param.as_str(), v);
                     }
                 }
                 AutomationTarget::Instrument { channel, param } => {
-                    if let Some(i) = snapshot.channels.iter().position(|c| c.id == channel) {
-                        if let Some(inst) = self.working.channel_instrument.get_mut(i) {
-                            inst.set_param_normalised(param.as_str(), v);
-                        }
+                    if let Some(i) = snapshot.channels.iter().position(|c| c.id == channel)
+                        && let Some(inst) = self.working.channel_instrument.get_mut(i)
+                    {
+                        inst.set_param_normalised(param.as_str(), v);
                     }
                 }
             }
@@ -614,17 +724,20 @@ impl EngineCore {
                 self.note_on(n.channel, Some(n.uid), n.key, n.velocity, n.pan, n.fine);
                 // If the queue is full, release whatever is due first rather
                 // than dropping this note's release and hanging the voice.
-                if self.pending_offs.len() >= MAX_VOICES * 2 {
-                    if let Some(index) = self
+                if self.pending_offs.len() >= MAX_VOICES * 2
+                    && let Some(index) = self
                         .pending_offs
                         .iter()
                         .enumerate()
-                        .min_by(|a, b| a.1.end.partial_cmp(&b.1.end).unwrap_or(std::cmp::Ordering::Equal))
+                        .min_by(|a, b| {
+                            a.1.end
+                                .partial_cmp(&b.1.end)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })
                         .map(|(i, _)| i)
-                    {
-                        let stale = self.pending_offs.swap_remove(index);
-                        self.note_off_uid(stale.channel, stale.uid, stale.key);
-                    }
+                {
+                    let stale = self.pending_offs.swap_remove(index);
+                    self.note_off_uid(stale.channel, stale.uid, stale.key);
                 }
                 self.pending_offs.push(PendingOff {
                     end: n.end,
@@ -654,7 +767,34 @@ impl EngineCore {
         }
     }
 
+    /// Whether anything at all could be making sound right now.
+    fn is_sounding(&self) -> bool {
+        self.transport.playing
+            || self.metronome_env > 1e-4
+            || self.pool.voices.iter().any(|v| v.active)
+            || self.synths.iter().any(Option::is_some)
+    }
+
     fn render_block(&mut self, out: &mut [f32], frames: usize) {
+        // Once nothing has sounded for long enough that even a long reverb tail
+        // has decayed, there is no arithmetic worth doing. This is the usual
+        // state while someone is editing, and it keeps the callback free.
+        if self.is_sounding() {
+            self.idle_frames = 0;
+        } else {
+            let tail = (self.sample_rate * 6.0) as usize;
+            if self.idle_frames < tail {
+                self.idle_frames = self.idle_frames.saturating_add(frames);
+            } else {
+                out.fill(0.0);
+                for m in &mut self.meters {
+                    m.peak_left = 0.0;
+                    m.peak_right = 0.0;
+                }
+                return;
+            }
+        }
+
         let sr = self.sample_rate;
         let tempo = self.tempo();
         let beats_per_sample = tempo / (60.0 * sr as f64);
@@ -732,6 +872,37 @@ impl EngineCore {
         // Solo state cannot change mid-block, so resolve it once.
         let solo_active = snapshot.mixer.any_solo();
 
+        // An insert is worth processing if a channel feeds it, if it holds
+        // effects (which may still be ringing out), or if a send returns into
+        // it. Everything else is silence and can be skipped outright. The set
+        // only changes with the snapshot, so it is worked out there.
+        if self.live_generation != snapshot.generation {
+            self.track_fed.resize(track_count, false);
+            self.live_tracks.clear();
+            for track in 1..track_count {
+                let t = &snapshot.mixer.tracks[track];
+                if t.muted || (solo_active && !t.solo) {
+                    self.track_fed[track] = false;
+                    continue;
+                }
+                let fed = snapshot
+                    .channels
+                    .iter()
+                    .any(|c| c.audible && c.mixer_track.min(track_count - 1) == track);
+                let has_effects = !self.working.mixer_effects[track].is_empty();
+                let receives_send = snapshot.mixer.tracks.iter().any(|src| {
+                    src.sends
+                        .iter()
+                        .any(|(dst, amt)| *dst == track && *amt > 0.0)
+                });
+                self.track_fed[track] = fed || has_effects || receives_send;
+                if self.track_fed[track] {
+                    self.live_tracks.push(track);
+                }
+            }
+            self.live_generation = snapshot.generation;
+        }
+
         for f in 0..frames {
             for c in self.chan_l.iter_mut().take(channel_count) {
                 *c = 0.0;
@@ -785,8 +956,8 @@ impl EngineCore {
                 let vol = self.working.channel_volume[index];
                 let (gl, gr) = crate::audio::dsp::pan_gains(self.working.channel_pan[index]);
                 let track = ch.mixer_track.min(track_count - 1);
-                self.bus_l[track * frames + f] += l * vol * gl * 1.4142;
-                self.bus_r[track * frames + f] += r * vol * gr * 1.4142;
+                self.bus_l[track * frames + f] += l * vol * gl * std::f32::consts::SQRT_2;
+                self.bus_r[track * frames + f] += r * vol * gr * std::f32::consts::SQRT_2;
             }
 
             // Metronome goes straight to master.
@@ -804,7 +975,14 @@ impl EngineCore {
             }
 
             // Fold in last frame's send returns before the inserts run.
-            for track in 0..track_count {
+            if self.send_l[0] != 0.0 || self.send_r[0] != 0.0 {
+                self.bus_l[f] += self.send_l[0];
+                self.bus_r[f] += self.send_r[0];
+                self.send_l[0] = 0.0;
+                self.send_r[0] = 0.0;
+            }
+            for i in 0..self.live_tracks.len() {
+                let track = self.live_tracks[i];
                 if self.send_l[track] != 0.0 || self.send_r[track] != 0.0 {
                     self.bus_l[track * frames + f] += self.send_l[track];
                     self.bus_r[track * frames + f] += self.send_r[track];
@@ -814,16 +992,12 @@ impl EngineCore {
             }
 
             // Mixer inserts, then master.
-            for track in 1..track_count {
+            for i in 0..self.live_tracks.len() {
+                let track = self.live_tracks[i];
                 let idx = track * frames + f;
                 let mut l = self.bus_l[idx];
                 let mut r = self.bus_r[idx];
                 let t = &snapshot.mixer.tracks[track];
-                if t.muted || (solo_active && !t.solo) {
-                    self.bus_l[idx] = 0.0;
-                    self.bus_r[idx] = 0.0;
-                    continue;
-                }
                 if !self.working.mixer_effects[track].is_empty() {
                     let (nl, nr) = self.mixer_chains[track].process(
                         l,
@@ -837,8 +1011,8 @@ impl EngineCore {
                 }
                 let vol = self.working.mixer_volume[track];
                 let (gl, gr) = crate::audio::dsp::pan_gains(self.working.mixer_pan[track]);
-                let out_l = l * vol * gl * 1.4142;
-                let out_r = r * vol * gr * 1.4142;
+                let out_l = l * vol * gl * std::f32::consts::SQRT_2;
+                let out_r = r * vol * gr * std::f32::consts::SQRT_2;
 
                 self.meters[track].peak_left = self.meters[track].peak_left.max(out_l.abs());
                 self.meters[track].peak_right = self.meters[track].peak_right.max(out_r.abs());
@@ -871,13 +1045,13 @@ impl EngineCore {
                 l = nl;
                 r = nr;
             }
-            let master =
-                self.working.mixer_volume.first().copied().unwrap_or(1.0) * self.working.master_volume;
+            let master = self.working.mixer_volume.first().copied().unwrap_or(1.0)
+                * self.working.master_volume;
             let (gl, gr) = crate::audio::dsp::pan_gains(
                 self.working.mixer_pan.first().copied().unwrap_or(0.0),
             );
-            l *= master * gl * 1.4142;
-            r *= master * gr * 1.4142;
+            l *= master * gl * std::f32::consts::SQRT_2;
+            r *= master * gr * std::f32::consts::SQRT_2;
 
             // A gentle safety clip, so a runaway patch can't blow up the output.
             l = crate::audio::dsp::soft_clip(l * 0.85) * 1.1;

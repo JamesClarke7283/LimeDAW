@@ -34,14 +34,12 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .padding([5, 12])
         .style({
             let on = app.recording;
-            move |theme: &Theme, s| {
-                theme::button_toggle(theme, s, on, theme::palette(theme).danger)
-            }
+            move |theme: &Theme, s| theme::button_toggle(theme, s, on, theme::palette(theme).danger)
         })
         .on_press(Message::ToggleRecord);
 
     let mode_buttons = ui::segmented(
-        &[("Pattern", 0u8), ("Song", 1u8)]
+        [("Pattern", 0u8), ("Song", 1u8)]
             .map(|(label, value)| (value, label))
             .as_slice(),
         match app.play_mode {
@@ -79,7 +77,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
                     .padding([3, 7])
                     .style(theme::button_plain)
                     .on_press(Message::SetTimeSignature(
-                        if ts.numerator >= 16 { 1 } else { ts.numerator + 1 },
+                        if ts.numerator >= 16 {
+                            1
+                        } else {
+                            ts.numerator + 1
+                        },
                         ts.denominator
                     )),
                 text("/").size(12),
@@ -104,9 +106,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
     let readout = column![
         text(ui::format_position(position, beats_per_bar)).size(18),
-        text(ui::format_time(position * app.project.seconds_per_beat())).size(10).style(
-            |theme: &Theme| text::Style { color: Some(theme::palette(theme).text_dim) }
-        ),
+        text(ui::format_time(position * app.project.seconds_per_beat()))
+            .size(10)
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme::palette(theme).text_dim)
+            }),
     ]
     .align_x(Alignment::Center)
     .spacing(0);
@@ -129,10 +133,12 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
     let swing = column![
         ui::caption(format!("Swing {:.0}%", app.project.swing * 100.0)),
-        slider(0.0..=0.9, app.project.swing as f32, |v| Message::SetSwing(v as f64))
-            .step(0.01f32)
-            .width(Length::Fixed(84.0))
-            .style(theme::fader),
+        slider(0.0..=0.9, app.project.swing as f32, |v| Message::SetSwing(
+            v as f64
+        ))
+        .step(0.01f32)
+        .width(Length::Fixed(84.0))
+        .style(theme::fader),
     ]
     .spacing(1);
 
@@ -140,10 +146,14 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let master = column![
         ui::caption("Master"),
         row![
-            slider(0.0..=1.5, app.project.master_volume, Message::SetMasterVolume)
-                .step(0.005f32)
-                .width(Length::Fixed(96.0))
-                .style(theme::fader),
+            slider(
+                0.0..=1.5,
+                app.project.master_volume,
+                Message::SetMasterVolume
+            )
+            .step(0.005f32)
+            .width(Length::Fixed(96.0))
+            .style(theme::fader),
             ui::meter(master_l, master_r, 44.0, 14.0),
         ]
         .spacing(5)
@@ -187,7 +197,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         } else {
             format!("{voices} voices · {:.0}% dsp", (cpu * 100.0).min(999.0))
         };
-        column![ui::caption(label), ui::caption(format!("{:.0} Hz", app.engine.sample_rate()))].spacing(0)
+        column![
+            ui::caption(label),
+            ui::caption(format!("{:.0} Hz", app.engine.sample_rate()))
+        ]
+        .spacing(0)
     };
 
     let bar = container(
@@ -211,5 +225,7 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     .style(theme::toolbar)
     .width(Length::Fill);
 
-    column![bar, container(views).padding([0, 6])].spacing(4).into()
+    column![bar, container(views).padding([0, 6])]
+        .spacing(4)
+        .into()
 }

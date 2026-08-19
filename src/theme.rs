@@ -3,7 +3,9 @@
 //! Both are built from one palette definition so the two stay in step, and the
 //! app follows the operating system's preference unless told otherwise.
 
-use iced::widget::{button, container, pick_list, progress_bar, rule, scrollable, slider, text_input};
+use iced::widget::{
+    button, container, pick_list, progress_bar, rule, scrollable, slider, text_input,
+};
 use iced::{Background, Border, Color, Shadow, Theme, Vector, border, color};
 use serde::{Deserialize, Serialize};
 
@@ -125,7 +127,11 @@ pub const DARK: Palette = Palette {
 
 /// The palette matching an `iced::Theme` produced by this module.
 pub fn palette(theme: &Theme) -> Palette {
-    if theme.extended_palette().is_dark { DARK } else { LIGHT }
+    if theme.extended_palette().is_dark {
+        DARK
+    } else {
+        LIGHT
+    }
 }
 
 fn to_iced_palette(p: &Palette) -> iced::theme::Palette {
@@ -202,7 +208,11 @@ pub fn panel(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(p.surface)),
         text_color: Some(p.text),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(6) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(6),
+        },
         ..container::Style::default()
     }
 }
@@ -213,7 +223,11 @@ pub fn header(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(p.surface_high)),
         text_color: Some(p.text),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(6) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(6),
+        },
         ..container::Style::default()
     }
 }
@@ -224,7 +238,11 @@ pub fn well(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(p.surface_low)),
         text_color: Some(p.text),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(4) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(4),
+        },
         ..container::Style::default()
     }
 }
@@ -235,9 +253,16 @@ pub fn toolbar(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(p.surface_high)),
         text_color: Some(p.text),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(8) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(8),
+        },
         shadow: Shadow {
-            color: Color { a: if p.is_dark { 0.35 } else { 0.12 }, ..Color::BLACK },
+            color: Color {
+                a: if p.is_dark { 0.35 } else { 0.12 },
+                ..Color::BLACK
+            },
             offset: Vector::new(0.0, 1.0),
             blur_radius: 6.0,
         },
@@ -251,7 +276,11 @@ pub fn card(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(p.surface_high)),
         text_color: Some(p.text),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(6) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(6),
+        },
         ..container::Style::default()
     }
 }
@@ -262,7 +291,11 @@ pub fn selected(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(mix(p.surface_high, p.accent, 0.18))),
         text_color: Some(p.text),
-        border: Border { color: p.accent, width: 1.0, radius: border::radius(6) },
+        border: Border {
+            color: p.accent,
+            width: 1.0,
+            radius: border::radius(6),
+        },
         ..container::Style::default()
     }
 }
@@ -273,7 +306,11 @@ pub fn notice(theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(mix(p.surface, p.warning, 0.16))),
         text_color: Some(p.text),
-        border: Border { color: mix(p.border, p.warning, 0.4), width: 1.0, radius: border::radius(6) },
+        border: Border {
+            color: mix(p.border, p.warning, 0.4),
+            width: 1.0,
+            radius: border::radius(6),
+        },
         ..container::Style::default()
     }
 }
@@ -293,8 +330,16 @@ pub fn button_plain(theme: &Theme, status: button::Status) -> button::Style {
     };
     button::Style {
         background: Some(Background::Color(bg)),
-        text_color: if matches!(status, button::Status::Disabled) { p.text_dim } else { p.text },
-        border: Border { color: p.border, width: 1.0, radius: border::radius(5) },
+        text_color: if matches!(status, button::Status::Disabled) {
+            p.text_dim
+        } else {
+            p.text
+        },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(5),
+        },
         ..button::Style::default()
     }
 }
@@ -311,7 +356,11 @@ pub fn button_accent(theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: p.accent_text,
-        border: Border { color: darken(p.accent, 0.15), width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: darken(p.accent, 0.15),
+            width: 1.0,
+            radius: border::radius(5),
+        },
         ..button::Style::default()
     }
 }
@@ -328,7 +377,11 @@ pub fn button_danger(theme: &Theme, status: button::Status) -> button::Style {
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: Color::WHITE,
-        border: Border { color: darken(p.danger, 0.15), width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: darken(p.danger, 0.15),
+            width: 1.0,
+            radius: border::radius(5),
+        },
         ..button::Style::default()
     }
 }
@@ -337,14 +390,28 @@ pub fn button_danger(theme: &Theme, status: button::Status) -> button::Style {
 pub fn button_ghost(theme: &Theme, status: button::Status) -> button::Style {
     let p = palette(theme);
     let bg = match status {
-        button::Status::Hovered => Color { a: 0.10, ..p.accent },
-        button::Status::Pressed => Color { a: 0.20, ..p.accent },
+        button::Status::Hovered => Color {
+            a: 0.10,
+            ..p.accent
+        },
+        button::Status::Pressed => Color {
+            a: 0.20,
+            ..p.accent
+        },
         _ => Color::TRANSPARENT,
     };
     button::Style {
         background: Some(Background::Color(bg)),
-        text_color: if matches!(status, button::Status::Disabled) { p.text_dim } else { p.text },
-        border: Border { color: Color::TRANSPARENT, width: 0.0, radius: border::radius(5) },
+        text_color: if matches!(status, button::Status::Disabled) {
+            p.text_dim
+        } else {
+            p.text
+        },
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 0.0,
+            radius: border::radius(5),
+        },
         ..button::Style::default()
     }
 }
@@ -356,7 +423,11 @@ pub fn button_tab(theme: &Theme, status: button::Status, active: bool) -> button
         return button::Style {
             background: Some(Background::Color(p.accent)),
             text_color: p.accent_text,
-            border: Border { color: p.accent, width: 1.0, radius: border::radius(5) },
+            border: Border {
+                color: p.accent,
+                width: 1.0,
+                radius: border::radius(5),
+            },
             ..button::Style::default()
         };
     }
@@ -368,19 +439,36 @@ pub fn button_tab(theme: &Theme, status: button::Status, active: bool) -> button
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: p.text_dim,
-        border: Border { color: Color::TRANSPARENT, width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: 1.0,
+            radius: border::radius(5),
+        },
         ..button::Style::default()
     }
 }
 
 /// A small toggle, lit when engaged.
-pub fn button_toggle(theme: &Theme, status: button::Status, on: bool, tint: Color) -> button::Style {
+pub fn button_toggle(
+    theme: &Theme,
+    status: button::Status,
+    on: bool,
+    tint: Color,
+) -> button::Style {
     let p = palette(theme);
     if on {
         return button::Style {
             background: Some(Background::Color(tint)),
-            text_color: if relative_luminance(tint) > 0.5 { Color::BLACK } else { Color::WHITE },
-            border: Border { color: darken(tint, 0.2), width: 1.0, radius: border::radius(4) },
+            text_color: if relative_luminance(tint) > 0.5 {
+                Color::BLACK
+            } else {
+                Color::WHITE
+            },
+            border: Border {
+                color: darken(tint, 0.2),
+                width: 1.0,
+                radius: border::radius(4),
+            },
             ..button::Style::default()
         };
     }
@@ -392,7 +480,11 @@ pub fn button_toggle(theme: &Theme, status: button::Status, on: bool, tint: Colo
     button::Style {
         background: Some(Background::Color(bg)),
         text_color: p.text_dim,
-        border: Border { color: p.border, width: 1.0, radius: border::radius(4) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(4),
+        },
         ..button::Style::default()
     }
 }
@@ -406,11 +498,18 @@ pub fn text_field(theme: &Theme, status: text_input::Status) -> text_input::Styl
     };
     text_input::Style {
         background: Background::Color(p.surface_low),
-        border: Border { color: border_color, width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: border::radius(5),
+        },
         icon: p.text_dim,
         placeholder: p.text_dim,
         value: p.text,
-        selection: Color { a: 0.35, ..p.accent },
+        selection: Color {
+            a: 0.35,
+            ..p.accent
+        },
     }
 }
 
@@ -425,7 +524,11 @@ pub fn picker(theme: &Theme, status: pick_list::Status) -> pick_list::Style {
         placeholder_color: p.text_dim,
         handle_color: p.text_dim,
         background: Background::Color(p.surface_low),
-        border: Border { color: border_color, width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: border::radius(5),
+        },
     }
 }
 
@@ -433,12 +536,19 @@ pub fn menu(theme: &Theme) -> iced::widget::overlay::menu::Style {
     let p = palette(theme);
     iced::widget::overlay::menu::Style {
         background: Background::Color(p.surface_high),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(5) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(5),
+        },
         text_color: p.text,
         selected_background: Background::Color(p.accent),
         selected_text_color: p.accent_text,
         shadow: Shadow {
-            color: Color { a: if p.is_dark { 0.5 } else { 0.18 }, ..Color::BLACK },
+            color: Color {
+                a: if p.is_dark { 0.5 } else { 0.18 },
+                ..Color::BLACK
+            },
             offset: Vector::new(0.0, 2.0),
             blur_radius: 10.0,
         },
@@ -453,12 +563,22 @@ pub fn fader(theme: &Theme, status: slider::Status) -> slider::Style {
     };
     slider::Style {
         rail: slider::Rail {
-            backgrounds: (Background::Color(p.accent), Background::Color(p.surface_low)),
+            backgrounds: (
+                Background::Color(p.accent),
+                Background::Color(p.surface_low),
+            ),
             width: 5.0,
-            border: Border { color: p.border, width: 1.0, radius: border::radius(3) },
+            border: Border {
+                color: p.border,
+                width: 1.0,
+                radius: border::radius(3),
+            },
         },
         handle: slider::Handle {
-            shape: slider::HandleShape::Rectangle { width: 10, border_radius: border::radius(3) },
+            shape: slider::HandleShape::Rectangle {
+                width: 10,
+                border_radius: border::radius(3),
+            },
             background: Background::Color(handle_color),
             border_color: darken(handle_color, 0.25),
             border_width: 1.0,
@@ -473,11 +593,18 @@ pub fn scroll(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
         scrollable::Status::Hovered { .. } | scrollable::Status::Dragged { .. }
     );
     let rail = scrollable::Rail {
-        background: Some(Background::Color(Color { a: 0.0, ..p.surface_low })),
+        background: Some(Background::Color(Color {
+            a: 0.0,
+            ..p.surface_low
+        })),
         border: Border::default(),
         scroller: scrollable::Scroller {
             background: Background::Color(if hovered { p.border_strong } else { p.border }),
-            border: Border { color: Color::TRANSPARENT, width: 0.0, radius: border::radius(4) },
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: border::radius(4),
+            },
         },
     };
     scrollable::Style {
@@ -487,7 +614,11 @@ pub fn scroll(theme: &Theme, status: scrollable::Status) -> scrollable::Style {
         gap: None,
         auto_scroll: scrollable::AutoScroll {
             background: Background::Color(p.surface_high),
-            border: Border { color: p.border, width: 1.0, radius: border::radius(12) },
+            border: Border {
+                color: p.border,
+                width: 1.0,
+                radius: border::radius(12),
+            },
             shadow: Shadow::default(),
             icon: p.text_dim,
         },
@@ -509,7 +640,11 @@ pub fn progress(theme: &Theme) -> progress_bar::Style {
     progress_bar::Style {
         background: Background::Color(p.surface_low),
         bar: Background::Color(p.accent),
-        border: Border { color: p.border, width: 1.0, radius: border::radius(3) },
+        border: Border {
+            color: p.border,
+            width: 1.0,
+            radius: border::radius(3),
+        },
     }
 }
 

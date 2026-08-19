@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-pub use self::core::{EngineCmd, EngineCore, Meter, Trash, Transport, Working};
+pub use self::core::{EngineCmd, EngineCore, Meter, Transport, Trash, Working};
 pub use self::schedule::{ChannelSnapshot, PlayMode, Schedule, Snapshot};
 
 /// The number of mixer meters the status block can carry. Sized for the
@@ -98,7 +98,8 @@ impl EngineStatus {
     fn publish(&self, core: &EngineCore, cpu: f32) {
         self.position
             .store(core.transport.position.to_bits(), Ordering::Relaxed);
-        self.playing.store(core.transport.playing, Ordering::Relaxed);
+        self.playing
+            .store(core.transport.playing, Ordering::Relaxed);
         self.voices
             .store(core.active_voices() as u32, Ordering::Relaxed);
         self.sample_rate
@@ -198,12 +199,15 @@ pub struct Engine {
 
 impl Engine {
     /// Start the engine, opening the default output device if there is one.
-    pub fn start() -> Self {
+    ///
+    /// `buffer_frames` is what to ask the device for; the device may say no and
+    /// the host reports what it actually agreed to.
+    pub fn start(buffer_frames: u32) -> Self {
         let shared = Arc::new(EngineShared::default());
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            match native::NativeHost::start(shared.clone()) {
+            match native::NativeHost::start(shared.clone(), buffer_frames) {
                 Ok(host) => {
                     return Self {
                         shared,
@@ -229,6 +233,7 @@ impl Engine {
 
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = buffer_frames;
             match web::WebHost::start(shared.clone()) {
                 Ok(host) => Self {
                     shared,
@@ -266,6 +271,19 @@ impl Engine {
     pub fn sample_rate(&self) -> f32 {
         let sr = self.shared.status.sample_rate();
         if sr > 1.0 { sr } else { 48_000.0 }
+    }
+
+    /// The buffer size the device agreed to, in frames. Zero means the device
+    /// chose for itself.
+    pub fn buffer_frames(&self) -> u32 {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self._host.as_ref().map(|h| h.buffer_frames).unwrap_or(0)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            0
+        }
     }
 
     /// Browsers refuse to start audio until the user interacts with the page.
@@ -314,7 +332,10 @@ pub fn render_offline(
     let working = Box::new(Working::from_snapshot(&snapshot));
     core.handle(EngineCmd::SetSnapshot(snapshot.clone(), working));
     for (slot, synth) in synths {
-        core.handle(EngineCmd::SetSynth { slot, synth: Some(synth) });
+        core.handle(EngineCmd::SetSynth {
+            slot,
+            synth: Some(synth),
+        });
     }
     core.handle(EngineCmd::SetLoopEnabled(false));
     core.handle(EngineCmd::Seek(0.0));

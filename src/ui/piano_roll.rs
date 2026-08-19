@@ -73,14 +73,26 @@ impl Default for State {
 #[derive(Debug, Clone)]
 pub enum Action {
     Seek(f64),
-    Scroll { beats: f64, top_key: f32 },
-    Zoom { pixels_per_beat: f32, key_height: f32 },
+    Scroll {
+        beats: f64,
+        top_key: f32,
+    },
+    Zoom {
+        pixels_per_beat: f32,
+        key_height: f32,
+    },
     Select(Vec<Id>),
     /// Start a drag: take an undo checkpoint and set the selection in one step.
     BeginDrag(Vec<Id>),
     Checkpoint,
-    AddNote { key: u8, start: f64, length: f64 },
-    DragNewNote { end: f64 },
+    AddNote {
+        key: u8,
+        start: f64,
+        length: f64,
+    },
+    DragNewNote {
+        end: f64,
+    },
     SetPositions(Vec<(Id, u8, f64)>),
     SetLength(Vec<(Id, f64)>),
     Delete(Vec<Id>),
@@ -109,15 +121,9 @@ pub enum Interaction {
         origins: Vec<(Id, f64)>,
     },
     /// Sizing a note that was just drawn.
-    Drawing {
-        start: f64,
-        key: u8,
-    },
+    Drawing { start: f64, key: u8 },
     /// Rubber-band selection.
-    Selecting {
-        origin: Point,
-        current: Point,
-    },
+    Selecting { origin: Point, current: Point },
     /// Middle-drag panning.
     Panning {
         origin: Point,
@@ -125,9 +131,7 @@ pub enum Interaction {
         top_key: f32,
     },
     /// Dragging in the velocity lane.
-    Velocity {
-        last: Option<Id>,
-    },
+    Velocity { last: Option<Id> },
     /// Scrubbing the ruler.
     Scrubbing,
     /// Erasing by dragging across notes.
@@ -158,14 +162,19 @@ impl<'a> PianoRoll<'a> {
         self.state.scroll_beats + ((x - KEY_WIDTH) / self.state.pixels_per_beat.max(1.0)) as f64
     }
 
-    /// Top edge of a key's lane. Lanes run downward from here, so
-    /// `key_of_y(y_of_key(k)) == k` and clicks land on the key they look like.
+    /// Top edge of a key's lane. Lanes are drawn downward from here.
     fn y_of_key(&self, key: f32) -> f32 {
         RULER_HEIGHT + (self.state.top_key - key) * self.state.key_height
     }
 
-    fn key_of_y(&self, y: f32) -> f32 {
-        self.state.top_key - (y - RULER_HEIGHT) / self.state.key_height.max(1.0)
+    /// The key whose lane contains `y`.
+    ///
+    /// Lanes grow downward from `y_of_key`, so the row index has to be floored
+    /// before it is subtracted — flooring afterwards lands a semitone low for
+    /// every pixel but the topmost one in each lane.
+    fn key_at(&self, y: f32) -> i32 {
+        let row = ((y - RULER_HEIGHT) / self.state.key_height.max(1.0)).floor();
+        (self.state.top_key - row).floor() as i32
     }
 
     fn snap_beat(&self, beat: f64) -> f64 {
@@ -177,7 +186,11 @@ impl<'a> PianoRoll<'a> {
     }
 
     fn grid_height(&self, bounds: Size) -> f32 {
-        let lane = if self.state.show_velocity { VELOCITY_HEIGHT } else { 0.0 };
+        let lane = if self.state.show_velocity {
+            VELOCITY_HEIGHT
+        } else {
+            0.0
+        };
         (bounds.height - lane).max(RULER_HEIGHT + 10.0)
     }
 
@@ -186,7 +199,7 @@ impl<'a> PianoRoll<'a> {
         if point.x < KEY_WIDTH || point.y < RULER_HEIGHT || point.y > self.grid_height(bounds) {
             return None;
         }
-        let key = self.key_of_y(point.y).floor().clamp(0.0, 127.0) as i32;
+        let key = self.key_at(point.y).clamp(0, 127);
         let beat = self.beat_of_x(point.x);
         self.pattern
             .notes
@@ -205,8 +218,9 @@ impl<'a> PianoRoll<'a> {
         let (y0, y1) = (a.y.min(b.y), a.y.max(b.y));
         let beat0 = self.beat_of_x(x0);
         let beat1 = self.beat_of_x(x1);
-        let key_hi = self.key_of_y(y0).floor();
-        let key_lo = self.key_of_y(y1).floor();
+        // y0 is the top of the band, so it holds the higher key.
+        let key_hi = self.key_at(y0) as f32;
+        let key_lo = self.key_at(y1) as f32;
         self.pattern
             .notes
             .iter()
@@ -302,8 +316,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                 }
 
                 // Keyboard gutter: audition the key for as long as it is held.
-                if point.x < KEY_WIDTH && point.y >= RULER_HEIGHT && point.y < self.grid_height(size) {
-                    let key = self.key_of_y(point.y).floor().clamp(0.0, 127.0) as u8;
+                if point.x < KEY_WIDTH
+                    && point.y >= RULER_HEIGHT
+                    && point.y < self.grid_height(size)
+                {
+                    let key = self.key_at(point.y).clamp(0, 127) as u8;
                     *interaction = Interaction::Auditioning;
                     return Some(canvas::Action::publish(Action::Preview(key)).and_capture());
                 }
@@ -324,9 +341,7 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                     if hits.is_empty() {
                         return Some(canvas::Action::capture());
                     }
-                    return Some(
-                        canvas::Action::publish(Action::SetVelocity(hits)).and_capture(),
-                    );
+                    return Some(canvas::Action::publish(Action::SetVelocity(hits)).and_capture());
                 }
 
                 if point.y < RULER_HEIGHT || point.x < KEY_WIDTH {
@@ -348,7 +363,10 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                         if let Some(note) = self.note_at(point, size) {
                             return Some(start_move(self, interaction, note, point));
                         }
-                        *interaction = Interaction::Selecting { origin: point, current: point };
+                        *interaction = Interaction::Selecting {
+                            origin: point,
+                            current: point,
+                        };
                         Some(canvas::Action::publish(Action::Select(Vec::new())).and_capture())
                     }
                     Tool::Draw => {
@@ -366,8 +384,10 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                                     .filter(|n| ids.contains(&n.id))
                                     .map(|n| (n.id, n.length))
                                     .collect();
-                                *interaction =
-                                    Interaction::Resizing { anchor_x: point.x, origins };
+                                *interaction = Interaction::Resizing {
+                                    anchor_x: point.x,
+                                    origins,
+                                };
                                 return Some(
                                     canvas::Action::publish(Action::Checkpoint).and_capture(),
                                 );
@@ -375,7 +395,7 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                             return Some(start_move(self, interaction, note, point));
                         }
                         // Empty space: draw a new note and let the drag size it.
-                        let key = self.key_of_y(point.y).floor().clamp(0.0, 127.0) as u8;
+                        let key = self.key_at(point.y).clamp(0, 127) as u8;
                         let start = self.snap_beat(self.beat_of_x(point.x));
                         let length = if self.snap > 0.0 { self.snap } else { 0.25 };
                         *interaction = Interaction::Drawing { start, key };
@@ -386,22 +406,32 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                     }
                 }
             }
-            canvas::Event::Mouse(mouse::Event::CursorMoved { position: cursor_position }) => {
-                let point = cursor
-                    .position_in(bounds)
-                    .unwrap_or(Point::new(cursor_position.x - bounds.x, cursor_position.y - bounds.y));
+            canvas::Event::Mouse(mouse::Event::CursorMoved {
+                position: cursor_position,
+            }) => {
+                let point = cursor.position_in(bounds).unwrap_or(Point::new(
+                    cursor_position.x - bounds.x,
+                    cursor_position.y - bounds.y,
+                ));
                 match interaction {
                     Interaction::Idle => None,
-                    Interaction::Panning { origin, scroll, top_key } => {
+                    Interaction::Panning {
+                        origin,
+                        scroll,
+                        top_key,
+                    } => {
                         let beats = (*scroll
                             - ((point.x - origin.x) / self.state.pixels_per_beat.max(1.0)) as f64)
                             .max(0.0);
-                        let keys =
-                            (*top_key - (point.y - origin.y) / self.state.key_height.max(1.0))
-                                .clamp(12.0, 127.0);
+                        let keys = (*top_key
+                            - (point.y - origin.y) / self.state.key_height.max(1.0))
+                        .clamp(12.0, 127.0);
                         Some(
-                            canvas::Action::publish(Action::Scroll { beats, top_key: keys })
-                                .and_capture(),
+                            canvas::Action::publish(Action::Scroll {
+                                beats,
+                                top_key: keys,
+                            })
+                            .and_capture(),
                         )
                     }
                     Interaction::Scrubbing => {
@@ -411,7 +441,7 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                     Interaction::Auditioning => {
                         // Slide along the keyboard to hear neighbouring keys.
                         if point.x < KEY_WIDTH && point.y >= RULER_HEIGHT {
-                            let key = self.key_of_y(point.y).floor().clamp(0.0, 127.0) as u8;
+                            let key = self.key_at(point.y).clamp(0, 127) as u8;
                             return Some(
                                 canvas::Action::publish(Action::Preview(key)).and_capture(),
                             );
@@ -428,7 +458,9 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                         Some(canvas::Action::capture())
                     }
                     Interaction::Drawing { start, .. } => {
-                        let end = self.snap_beat(self.beat_of_x(point.x)).max(*start + self.snap.max(1.0 / 32.0));
+                        let end = self
+                            .snap_beat(self.beat_of_x(point.x))
+                            .max(*start + self.snap.max(1.0 / 32.0));
                         Some(canvas::Action::publish(Action::DragNewNote { end }).and_capture())
                     }
                     Interaction::Resizing { anchor_x, origins } => {
@@ -449,7 +481,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                             .collect();
                         Some(canvas::Action::publish(Action::SetLength(updates)).and_capture())
                     }
-                    Interaction::Moving { anchor, origins, last_key } => {
+                    Interaction::Moving {
+                        anchor,
+                        origins,
+                        last_key,
+                    } => {
                         let beat_delta =
                             ((point.x - anchor.x) / self.state.pixels_per_beat.max(1.0)) as f64;
                         let key_delta =
@@ -470,9 +506,7 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                         *last_key = top_key;
                         // The application auditions the new pitch when it sees
                         // a key change, so the move itself is never dropped.
-                        Some(
-                            canvas::Action::publish(Action::SetPositions(updates)).and_capture(),
-                        )
+                        Some(canvas::Action::publish(Action::SetPositions(updates)).and_capture())
                     }
                     Interaction::Selecting { origin, current } => {
                         *current = point;
@@ -512,9 +546,7 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                 *interaction = Interaction::Idle;
                 if previewing {
                     // Release anything the drag auditioned.
-                    return Some(
-                        canvas::Action::publish(Action::Release(0)).and_capture(),
-                    );
+                    return Some(canvas::Action::publish(Action::Release(0)).and_capture());
                 }
                 if was_active {
                     Some(canvas::Action::request_redraw().and_capture())
@@ -542,8 +574,8 @@ impl canvas::Program<Action> for PianoRoll<'_> {
         frame.fill_rectangle(Point::ORIGIN, size, p.surface_low);
 
         // ---- key lanes ----
-        let first_key = self.key_of_y(grid_bottom).floor().max(0.0) as i32;
-        let last_key = self.key_of_y(RULER_HEIGHT).floor().min(127.0) as i32;
+        let first_key = self.key_at(grid_bottom).max(0);
+        let last_key = self.key_at(RULER_HEIGHT).min(127);
         for key in first_key..=last_key {
             let y = self.y_of_key(key as f32);
             if y > grid_bottom || y + self.state.key_height < RULER_HEIGHT {
@@ -605,7 +637,15 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                     .find(|(id, _)| *id == note.channel)
                     .map(|(_, c)| *c)
                     .unwrap_or(p.text_dim);
-                draw_note(&mut frame, self, note, theme::alpha(colour, 0.22), false, grid_bottom, &p);
+                draw_note(
+                    &mut frame,
+                    self,
+                    note,
+                    theme::alpha(colour, 0.22),
+                    false,
+                    grid_bottom,
+                    &p,
+                );
             }
         }
 
@@ -615,7 +655,15 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                 continue;
             }
             let selected = self.state.selection.contains(&note.id);
-            draw_note(&mut frame, self, note, self.channel_color, selected, grid_bottom, &p);
+            draw_note(
+                &mut frame,
+                self,
+                note,
+                self.channel_color,
+                selected,
+                grid_bottom,
+                &p,
+            );
         }
 
         // ---- rubber band ----
@@ -624,7 +672,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
             let y = origin.y.min(current.y);
             let w = (origin.x - current.x).abs();
             let h = (origin.y - current.y).abs();
-            frame.fill_rectangle(Point::new(x, y), Size::new(w, h), theme::alpha(p.accent, 0.15));
+            frame.fill_rectangle(
+                Point::new(x, y),
+                Size::new(w, h),
+                theme::alpha(p.accent, 0.15),
+            );
             frame.stroke_rectangle(
                 Point::new(x, y),
                 Size::new(w, h),
@@ -672,7 +724,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
                 }
                 let h = lane.height * note.velocity.clamp(0.0, 1.0);
                 let selected = self.state.selection.contains(&note.id);
-                let colour = if selected { p.accent } else { self.channel_color };
+                let colour = if selected {
+                    p.accent
+                } else {
+                    self.channel_color
+                };
                 frame.fill_rectangle(
                     Point::new(x, lane.y + lane.height - h),
                     Size::new(3.0, h),
@@ -703,7 +759,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
             }
             let black = ui::is_black_key(key as u8);
             let fill = if black {
-                if p.is_dark { theme::darken(p.surface, 0.5) } else { theme::darken(p.surface, 0.75) }
+                if p.is_dark {
+                    theme::darken(p.surface, 0.5)
+                } else {
+                    theme::darken(p.surface, 0.75)
+                }
             } else if p.is_dark {
                 theme::lighten(p.surface, 0.10)
             } else {
@@ -727,7 +787,11 @@ impl canvas::Program<Action> for PianoRoll<'_> {
         );
 
         // ---- ruler ----
-        frame.fill_rectangle(Point::ORIGIN, Size::new(size.width, RULER_HEIGHT), p.surface_high);
+        frame.fill_rectangle(
+            Point::ORIGIN,
+            Size::new(size.width, RULER_HEIGHT),
+            p.surface_high,
+        );
         frame.fill_rectangle(
             Point::new(0.0, RULER_HEIGHT - 1.0),
             Size::new(size.width, 1.0),
@@ -762,21 +826,27 @@ impl canvas::Program<Action> for PianoRoll<'_> {
         }
 
         // ---- hover readout ----
-        if let Some(point) = cursor.position_in(bounds) {
-            if point.x > KEY_WIDTH && point.y > RULER_HEIGHT && point.y < grid_bottom {
-                let key = self.key_of_y(point.y).floor().clamp(0.0, 127.0) as u8;
-                let beat = self.beat_of_x(point.x);
-                let label = format!("{}  {}", ui::note_name(key), ui::format_position(beat.max(0.0), self.beats_per_bar));
-                frame.fill_text(Text {
-                    content: label,
-                    position: Point::new(size.width - 8.0, RULER_HEIGHT + 4.0),
-                    color: p.text_dim,
-                    size: 10.0.into(),
-                    align_x: iced::alignment::Horizontal::Right.into(),
-                    align_y: iced::alignment::Vertical::Top,
-                    ..Text::default()
-                });
-            }
+        if let Some(point) = cursor.position_in(bounds)
+            && point.x > KEY_WIDTH
+            && point.y > RULER_HEIGHT
+            && point.y < grid_bottom
+        {
+            let key = self.key_at(point.y).clamp(0, 127) as u8;
+            let beat = self.beat_of_x(point.x);
+            let label = format!(
+                "{}  {}",
+                ui::note_name(key),
+                ui::format_position(beat.max(0.0), self.beats_per_bar)
+            );
+            frame.fill_text(Text {
+                content: label,
+                position: Point::new(size.width - 8.0, RULER_HEIGHT + 4.0),
+                color: p.text_dim,
+                size: 10.0.into(),
+                align_x: iced::alignment::Horizontal::Right.into(),
+                align_y: iced::alignment::Vertical::Top,
+                ..Text::default()
+            });
         }
 
         vec![frame.into_geometry()]
@@ -835,7 +905,11 @@ fn start_move(
         .filter(|n| ids.contains(&n.id))
         .map(|n| (n.id, n.key, n.start))
         .collect();
-    *interaction = Interaction::Moving { anchor: point, origins, last_key: note.key };
+    *interaction = Interaction::Moving {
+        anchor: point,
+        origins,
+        last_key: note.key,
+    };
     canvas::Action::publish(Action::BeginDrag(ids)).and_capture()
 }
 
@@ -866,13 +940,21 @@ fn draw_note(
     let draw_width = (x + width - left).max(2.0);
 
     // Velocity shades the note, which is how the roll shows dynamics at a glance.
-    let shaded = theme::mix(theme::darken(colour, 0.45), colour, note.velocity.clamp(0.0, 1.0));
+    let shaded = theme::mix(
+        theme::darken(colour, 0.45),
+        colour,
+        note.velocity.clamp(0.0, 1.0),
+    );
     frame.fill_rectangle(Point::new(left, top), Size::new(draw_width, height), shaded);
     frame.stroke_rectangle(
         Point::new(left, top),
         Size::new(draw_width, height),
         Stroke::default()
-            .with_color(if selected { p.accent } else { theme::darken(colour, 0.35) })
+            .with_color(if selected {
+                p.accent
+            } else {
+                theme::darken(colour, 0.35)
+            })
             .with_width(if selected { 2.0 } else { 1.0 }),
     );
     if draw_width > 26.0 && height > 9.0 {
@@ -996,7 +1078,10 @@ fn toolbar<'a>(app: &'a LimeDaw, pattern: &'a Pattern) -> Element<'a, Message> {
         .project
         .channels
         .iter()
-        .map(|c| ChannelChoice { id: c.id, name: c.name.clone() })
+        .map(|c| ChannelChoice {
+            id: c.id,
+            name: c.name.clone(),
+        })
         .collect();
     let current = app
         .selected_channel_id()
@@ -1029,7 +1114,11 @@ fn toolbar<'a>(app: &'a LimeDaw, pattern: &'a Pattern) -> Element<'a, Message> {
         .style(theme::button_plain)
         .on_press(Message::PianoRoll(Action::Zoom {
             pixels_per_beat: app.piano_roll.pixels_per_beat,
-            key_height: if app.piano_roll.key_height >= 24.0 { 9.0 } else { app.piano_roll.key_height + 4.0 },
+            key_height: if app.piano_roll.key_height >= 24.0 {
+                9.0
+            } else {
+                app.piano_roll.key_height + 4.0
+            },
         }));
 
     let selection_count = app.piano_roll.selection.len();

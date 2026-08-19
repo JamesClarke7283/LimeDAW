@@ -1,6 +1,7 @@
 //! The bulk of the update logic, kept apart from the state definition.
 
 use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::Arc;
 
 use iced::Task;
@@ -14,7 +15,7 @@ use crate::theme;
 impl LimeDaw {
     pub(crate) fn update_action(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Tick(_) | Message::SystemTheme(_) | Message::Keyboard(_) | Message::Noop => {}
+            Message::Tick | Message::SystemTheme(_) | Message::Keyboard(_) | Message::Noop => {}
 
             // ---- transport -------------------------------------------
             Message::TogglePlay => {
@@ -29,6 +30,10 @@ impl LimeDaw {
             Message::Stop => {
                 self.engine.send(EngineCmd::Stop);
                 self.release_all_previews();
+                // Stopping resets the effect state, so the engine needs its
+                // processors again.
+                self.forget_effect_chains();
+                self.needs_sync = true;
             }
             Message::Seek(beat) => self.engine.send(EngineCmd::Seek(beat.max(0.0))),
             Message::SetTempo(bpm) => {
@@ -48,7 +53,8 @@ impl LimeDaw {
             }
             Message::ToggleMetronome => {
                 self.settings.metronome = !self.settings.metronome;
-                self.engine.send(EngineCmd::SetMetronome(self.settings.metronome));
+                self.engine
+                    .send(EngineCmd::SetMetronome(self.settings.metronome));
                 let _ = self.settings.save();
             }
             Message::ToggleRecord => {
@@ -84,25 +90,30 @@ impl LimeDaw {
                 self.touch();
             }
             Message::SetTimeSignature(n, d) => {
-                self.project.time_signature = TimeSignature { numerator: n, denominator: d };
+                self.project.time_signature = TimeSignature {
+                    numerator: n,
+                    denominator: d,
+                };
                 self.project.sanitise();
                 self.touch();
             }
             Message::Panic => {
                 self.engine.send(EngineCmd::Panic);
                 self.release_all_previews();
+                self.forget_effect_chains();
+                self.needs_sync = true;
                 self.note("All notes stopped");
             }
 
             // ---- view -------------------------------------------------
             Message::SetView(view) => {
                 self.view = view;
-                if view == MainView::PianoRoll {
-                    if let Some(pattern) = self.selected_pattern_id() {
-                        self.play_mode = PlayMode::Pattern(pattern);
-                        self.engine.send(EngineCmd::SetMode(self.play_mode));
-                        self.needs_sync = true;
-                    }
+                if view == MainView::PianoRoll
+                    && let Some(pattern) = self.selected_pattern_id()
+                {
+                    self.play_mode = PlayMode::Pattern(pattern);
+                    self.engine.send(EngineCmd::SetMode(self.play_mode));
+                    self.needs_sync = true;
                 }
             }
             Message::ToggleBrowser => {
@@ -128,6 +139,11 @@ impl LimeDaw {
                 self.settings.ui_scale = scale.clamp(0.6, 2.5);
                 let _ = self.settings.save();
             }
+            Message::SetBufferFrames(frames) => {
+                self.settings.buffer_frames = frames;
+                let _ = self.settings.save();
+                self.note("Buffer size applies the next time LimeDAW starts");
+            }
             Message::SetStatus(text) => self.note(text),
 
             // ---- project ---------------------------------------------
@@ -148,7 +164,7 @@ impl LimeDaw {
                     self.checkpoint();
                     self.load_project(*project, Some(path.clone()));
                     self.settings
-                        .remember_project(&path.to_string_lossy().to_string());
+                        .remember_project(path.to_string_lossy().as_ref());
                     let _ = self.settings.save();
                     self.note(format!("Opened {}", crate::paths::display(&path)));
                 }
@@ -156,7 +172,8 @@ impl LimeDaw {
             },
             Message::SaveProject => {
                 let path = self.project_path.clone().unwrap_or_else(|| {
-                    crate::paths::projects_dir().join(format!("{}.lime", safe_name(&self.project.name)))
+                    crate::paths::projects_dir()
+                        .join(format!("{}.lime", safe_name(&self.project.name)))
                 });
                 return self.save_to(path);
             }
@@ -169,7 +186,7 @@ impl LimeDaw {
                     if let Some(path) = path {
                         self.project_path = Some(path.clone());
                         self.settings
-                            .remember_project(&path.to_string_lossy().to_string());
+                            .remember_project(path.to_string_lossy().as_ref());
                         let _ = self.settings.save();
                         self.note(format!("Saved to {}", crate::paths::display(&path)));
                     }
@@ -187,9 +204,8 @@ impl LimeDaw {
                 Err(err) => self.note(format!("Render failed: {err}")),
             },
             Message::Undo => {
-                if let Some(previous) = self.undo_pop() {
+                if self.apply_undo() {
                     self.note("Undo");
-                    let _ = previous;
                 } else {
                     self.note("Nothing to undo");
                 }
@@ -289,20 +305,20 @@ impl LimeDaw {
                 self.touch();
             }
             Message::SetDrumModel(id, model) => {
-                if let Some(c) = self.project.channel_mut(id) {
-                    if let Instrument::Sampler(p) = &mut c.instrument {
-                        p.source = SampleSource::Model(model);
-                    }
+                if let Some(c) = self.project.channel_mut(id)
+                    && let Instrument::Sampler(p) = &mut c.instrument
+                {
+                    p.source = SampleSource::Model(model);
                 }
                 self.touch();
             }
             Message::SetSoundFontPreset(id, bank, program) => {
-                if let Some(c) = self.project.channel_mut(id) {
-                    if let Instrument::SoundFont(p) = &mut c.instrument {
-                        p.bank = bank;
-                        p.preset = program;
-                        p.percussion = bank == 128;
-                    }
+                if let Some(c) = self.project.channel_mut(id)
+                    && let Instrument::SoundFont(p) = &mut c.instrument
+                {
+                    p.bank = bank;
+                    p.preset = program;
+                    p.percussion = bank == 128;
                 }
                 self.touch();
             }
@@ -316,9 +332,10 @@ impl LimeDaw {
                             p.source = SampleSource::File { path: path.clone() };
                             p.root_key = 60;
                         } else {
-                            let mut patch = SamplerPatch::default();
-                            patch.source = SampleSource::File { path: path.clone() };
-                            c.instrument = Instrument::Sampler(patch);
+                            c.instrument = Instrument::Sampler(SamplerPatch {
+                                source: SampleSource::File { path: path.clone() },
+                                ..SamplerPatch::default()
+                            });
                         }
                     }
                     self.touch();
@@ -326,7 +343,11 @@ impl LimeDaw {
                 }
                 Err(err) => self.note(format!("Could not load sample: {err}")),
             },
-            Message::AddSoundFontChannel { bank, program, name } => {
+            Message::AddSoundFontChannel {
+                bank,
+                program,
+                name,
+            } => {
                 self.checkpoint();
                 let id = self.add_channel_of(NewChannelKind::SoundFont);
                 if let Some(channel) = self.project.channel_mut(id) {
@@ -597,33 +618,35 @@ impl LimeDaw {
             }
             Message::SetSend(from, to, amount) => {
                 let count = self.project.mixer.tracks.len();
-                if from < count && to < count && from != to {
-                    if let Some(t) = self.project.mixer.tracks.get_mut(from) {
-                        t.sends.retain(|(dst, _)| *dst != to);
-                        if amount > 0.001 {
-                            t.sends.push((to, amount.clamp(0.0, 1.0)));
-                        }
+                if from < count
+                    && to < count
+                    && from != to
+                    && let Some(t) = self.project.mixer.tracks.get_mut(from)
+                {
+                    t.sends.retain(|(dst, _)| *dst != to);
+                    if amount > 0.001 {
+                        t.sends.push((to, amount.clamp(0.0, 1.0)));
                     }
                 }
                 self.touch();
             }
             Message::AddEffect(host, slug) => {
                 self.checkpoint();
-                if let Some(effect) = Effect::from_slug(&slug) {
-                    if let Some(chain) = self.effect_chain_mut(host) {
-                        chain.push(effect);
-                        let slot = chain.len() - 1;
-                        self.selected_effect = Some((host, slot));
-                    }
+                if let Some(effect) = Effect::from_slug(&slug)
+                    && let Some(chain) = self.effect_chain_mut(host)
+                {
+                    chain.push(effect);
+                    let slot = chain.len() - 1;
+                    self.selected_effect = Some((host, slot));
                 }
                 self.touch();
             }
             Message::RemoveEffect(host, slot) => {
                 self.checkpoint();
-                if let Some(chain) = self.effect_chain_mut(host) {
-                    if slot < chain.len() {
-                        chain.remove(slot);
-                    }
+                if let Some(chain) = self.effect_chain_mut(host)
+                    && slot < chain.len()
+                {
+                    chain.remove(slot);
                 }
                 self.selected_effect = None;
                 self.touch();
@@ -639,23 +662,36 @@ impl LimeDaw {
                 self.touch();
             }
             Message::ToggleEffect(host, slot) => {
-                if let Some(chain) = self.effect_chain_mut(host) {
-                    if let Some(effect) = chain.get_mut(slot) {
-                        effect.enabled = !effect.enabled;
-                    }
+                if let Some(chain) = self.effect_chain_mut(host)
+                    && let Some(effect) = chain.get_mut(slot)
+                {
+                    effect.enabled = !effect.enabled;
                 }
                 self.touch();
             }
             Message::SetEffectParam(host, slot, param, value) => {
-                if let Some(chain) = self.effect_chain_mut(host) {
-                    if let Some(effect) = chain.get_mut(slot) {
-                        effect.kind.set_param(&param, value);
-                    }
+                if let Some(chain) = self.effect_chain_mut(host)
+                    && let Some(effect) = chain.get_mut(slot)
+                {
+                    effect.kind.set_param(&param, value);
                 }
                 self.touch();
             }
             Message::SelectEffect(host, slot) => {
                 self.selected_effect = Some((host, slot));
+            }
+            Message::ApplyEffectPreset(host, slot, name) => {
+                self.checkpoint();
+                let mut applied = false;
+                if let Some(chain) = self.effect_chain_mut(host)
+                    && let Some(effect) = chain.get_mut(slot)
+                {
+                    applied = effect.kind.apply_preset(&name);
+                }
+                if applied {
+                    self.note(format!("Loaded preset “{name}”"));
+                    self.touch();
+                }
             }
 
             // ---- soundfont ---------------------------------------------
@@ -669,7 +705,9 @@ impl LimeDaw {
                     let count = self.soundfont_presets.len();
                     self.note(format!(
                         "Loaded {} ({count} presets)",
-                        path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()
+                        path.file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_default()
                     ));
                     if matches!(self.setup, Setup::ChooseSoundFont { .. }) {
                         self.finish_setup();
@@ -760,6 +798,7 @@ impl LimeDaw {
         self.sf_signature.clear();
         self.engine.send(EngineCmd::Stop);
         self.engine.send(EngineCmd::SetMode(self.play_mode));
+        self.forget_effect_chains();
         self.needs_sync = true;
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -805,10 +844,18 @@ impl LimeDaw {
 
     fn after_history(&mut self) {
         self.project.sanitise();
-        if self.selected_channel.map(|id| self.project.channel(id).is_none()).unwrap_or(true) {
+        if self
+            .selected_channel
+            .map(|id| self.project.channel(id).is_none())
+            .unwrap_or(true)
+        {
             self.selected_channel = self.project.channels.first().map(|c| c.id);
         }
-        if self.selected_pattern.map(|id| self.project.pattern(id).is_none()).unwrap_or(true) {
+        if self
+            .selected_pattern
+            .map(|id| self.project.pattern(id).is_none())
+            .unwrap_or(true)
+        {
             self.selected_pattern = self.project.patterns.first().map(|p| p.id);
         }
         self.selected_mixer_track = self
@@ -821,9 +868,10 @@ impl LimeDaw {
 
     pub(crate) fn add_channel_of(&mut self, kind: NewChannelKind) -> Id {
         let (name, instrument) = match kind {
-            NewChannelKind::Synth(preset) => {
-                (preset.label().to_string(), Instrument::Synth(preset.patch()))
-            }
+            NewChannelKind::Synth(preset) => (
+                preset.label().to_string(),
+                Instrument::Synth(preset.patch()),
+            ),
             NewChannelKind::Drum(model) => (
                 model.label().to_string(),
                 Instrument::Sampler(SamplerPatch::from_model(model)),
@@ -837,13 +885,19 @@ impl LimeDaw {
                     .unwrap_or_else(|| "SoundFont".to_string());
                 (name, Instrument::SoundFont(patch))
             }
-            NewChannelKind::EmptySampler => {
-                ("Sampler".to_string(), Instrument::Sampler(SamplerPatch::default()))
-            }
+            NewChannelKind::EmptySampler => (
+                "Sampler".to_string(),
+                Instrument::Sampler(SamplerPatch::default()),
+            ),
         };
         let id = self.project.add_channel(name, instrument);
         // Route each new channel to its own insert while there are spare ones.
-        let used: Vec<usize> = self.project.channels.iter().map(|c| c.mixer_track).collect();
+        let used: Vec<usize> = self
+            .project
+            .channels
+            .iter()
+            .map(|c| c.mixer_track)
+            .collect();
         let free = (1..self.project.mixer.tracks.len()).find(|t| !used.contains(t));
         if let (Some(track), Some(channel)) = (free, self.project.channel_mut(id)) {
             channel.mixer_track = track;
@@ -895,8 +949,13 @@ impl LimeDaw {
             self.note("Rendering…");
             Task::perform(
                 async move {
-                    let samples =
-                        crate::audio::render_offline(Arc::new(snapshot), synths, sample_rate, length, 2.0);
+                    let samples = crate::audio::render_offline(
+                        Arc::new(snapshot),
+                        synths,
+                        sample_rate,
+                        length,
+                        2.0,
+                    );
                     crate::persist::write_wav(&path, &samples, sample_rate as u32)
                         .map(|_| crate::paths::display(&path))
                         .map_err(|e| e.to_string())
@@ -907,6 +966,7 @@ impl LimeDaw {
     }
 
     /// Build a snapshot for offline rendering, independent of the live one.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn build_render_snapshot(&self, mode: PlayMode) -> crate::audio::Snapshot {
         let compiled = crate::audio::schedule::compile(&self.project, mode);
         let mut slots = 0usize;
@@ -956,10 +1016,12 @@ impl LimeDaw {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn build_render_synths_public(&self) -> Vec<(usize, Box<rustysynth::Synthesizer>)> {
         self.build_render_synths()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn build_render_synths(&self) -> Vec<(usize, Box<rustysynth::Synthesizer>)> {
         let Some(sf) = &self.soundfont else {
             return Vec::new();
@@ -991,10 +1053,20 @@ impl LimeDaw {
 pub fn safe_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == ' ' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     let trimmed = cleaned.trim();
-    if trimmed.is_empty() { "Untitled".into() } else { trimmed.to_string() }
+    if trimmed.is_empty() {
+        "Untitled".into()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1008,7 +1080,10 @@ fn write_project(path: &std::path::Path, json: &str) -> std::io::Result<()> {
 #[cfg(target_arch = "wasm32")]
 fn write_project(path: &std::path::Path, json: &str) -> std::io::Result<()> {
     // The browser build keeps projects in local storage instead of a filesystem.
-    if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok()).flatten() {
+    if let Some(storage) = web_sys::window()
+        .and_then(|w| w.local_storage().ok())
+        .flatten()
+    {
         let key = format!("limedaw.project.{}", path.display());
         let _ = storage.set_item(&key, json);
         return Ok(());
@@ -1068,7 +1143,11 @@ fn load_project_task(path: PathBuf) -> Task<Message> {
     let result = web_sys::window()
         .and_then(|w| w.local_storage().ok())
         .flatten()
-        .and_then(|s| s.get_item(&format!("limedaw.project.{}", path.display())).ok().flatten())
+        .and_then(|s| {
+            s.get_item(&format!("limedaw.project.{}", path.display()))
+                .ok()
+                .flatten()
+        })
         .ok_or_else(|| "project not found".to_string())
         .and_then(|raw| {
             serde_json::from_str::<Project>(&raw)
@@ -1132,15 +1211,12 @@ fn choose_soundfont_dialog() -> Task<Message> {
 fn load_sample_dialog(channel: Id) -> Task<Message> {
     Task::perform(
         async move {
-            let Some(handle) = rfd::AsyncFileDialog::new()
+            let handle = rfd::AsyncFileDialog::new()
                 .add_filter("Audio", &["wav"])
                 .set_directory(crate::paths::samples_dir())
                 .set_title("Load sample")
                 .pick_file()
-                .await
-            else {
-                return None;
-            };
+                .await?;
             let path = handle.path().to_path_buf();
             let loaded = crate::audio::samples::load_wav(&path)
                 .map(Arc::new)
@@ -1228,7 +1304,11 @@ impl LimeDaw {
             let length = self.project.pattern_length_beats(pattern_id).max(0.25);
             let raw = self.engine.status().position().rem_euclid(length);
             let snap = self.settings.grid_snap;
-            if snap > 0.0 { (raw / snap).round() * snap } else { raw }
+            if snap > 0.0 {
+                (raw / snap).round() * snap
+            } else {
+                raw
+            }
         });
 
         self.checkpoint();
@@ -1238,10 +1318,10 @@ impl LimeDaw {
             note.id = self.project.next_id();
             note.start = (note.start + target).max(0.0);
             // Notes pasted onto a different channel follow the selection.
-            if let Some(channel) = channel {
-                if self.project.channel(note.channel).is_none() {
-                    note.channel = channel;
-                }
+            if let Some(channel) = channel
+                && self.project.channel(note.channel).is_none()
+            {
+                note.channel = channel;
             }
             new_ids.push(note.id);
             if let Some(pattern) = self.project.pattern_mut(pattern_id) {
@@ -1355,10 +1435,7 @@ fn import_midi_dialog() -> Task<Message> {
                 .await?;
             let bytes = handle.read().await;
             let mut next = 1u32;
-            Some(
-                crate::persist::midi_to_notes(&bytes, 0, &mut next)
-                    .map_err(|e| e.to_string()),
-            )
+            Some(crate::persist::midi_to_notes(&bytes, 0, &mut next).map_err(|e| e.to_string()))
         },
         |result| match result {
             Some(parsed) => Message::MidiImported(parsed),

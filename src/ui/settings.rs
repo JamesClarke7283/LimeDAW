@@ -14,10 +14,14 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         column![
             ui::field(
                 "Theme",
-                pick_list(ThemeChoice::ALL.to_vec(), Some(app.settings.theme), Message::SetTheme)
-                    .text_size(12)
-                    .padding([5, 9])
-                    .style(theme::picker),
+                pick_list(
+                    ThemeChoice::ALL.to_vec(),
+                    Some(app.settings.theme),
+                    Message::SetTheme
+                )
+                .text_size(12)
+                .padding([5, 9])
+                .style(theme::picker),
             ),
             ui::caption(if app.system_dark {
                 "The system is currently using a dark appearance."
@@ -55,6 +59,13 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .spacing(10),
     );
 
+    let sample_rate = app.engine.sample_rate();
+    let buffer_options: Vec<String> = crate::config::BUFFER_SIZES
+        .iter()
+        .map(|frames| crate::config::describe_buffer(*frames, sample_rate))
+        .collect();
+    let current_buffer = crate::config::describe_buffer(app.settings.buffer_frames, sample_rate);
+
     let audio = card(
         "Audio",
         column![
@@ -63,17 +74,51 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
                 text(if app.engine.silent {
                     "No device — LimeDAW is running silently".to_string()
                 } else {
-                    format!("{:.0} Hz", app.engine.sample_rate())
+                    let agreed = app.engine.buffer_frames();
+                    if agreed > 0 {
+                        format!("{sample_rate:.0} Hz · {agreed} frame buffer")
+                    } else {
+                        format!("{sample_rate:.0} Hz")
+                    }
                 })
                 .size(12),
             ]
             .spacing(10),
+            ui::field(
+                "Buffer size",
+                pick_list(
+                    buffer_options,
+                    Some(current_buffer),
+                    move |choice: String| {
+                        let frames = choice
+                            .split(' ')
+                            .next()
+                            .and_then(|n| n.parse::<u32>().ok())
+                            .unwrap_or(1024);
+                        Message::SetBufferFrames(frames)
+                    }
+                )
+                .text_size(12)
+                .padding([5, 9])
+                .style(theme::picker),
+            ),
+            ui::caption(
+                "A larger buffer costs latency but survives a busy machine. \
+                 Raise it if you hear crackling; lower it if playing feels laggy."
+            ),
             labelled(
-                format!("Default note velocity — {:.0}%", app.settings.default_velocity * 100.0),
-                slider(0.05..=1.0f32, app.settings.default_velocity, Message::SetDefaultVelocity)
-                    .step(0.01f32)
-                    .width(Length::Fixed(240.0))
-                    .style(theme::fader),
+                format!(
+                    "Default note velocity — {:.0}%",
+                    app.settings.default_velocity * 100.0
+                ),
+                slider(
+                    0.05..=1.0f32,
+                    app.settings.default_velocity,
+                    Message::SetDefaultVelocity
+                )
+                .step(0.01f32)
+                .width(Length::Fixed(240.0))
+                .style(theme::fader),
             ),
             button(text("Stop all sound").size(12))
                 .padding([5, 10])
@@ -118,7 +163,9 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         "About",
         column![
             text(format!("LimeDAW {}", env!("CARGO_PKG_VERSION"))).size(13),
-            ui::caption("A pattern-based DAW: channel rack, piano roll, playlist, mixer and an MCP server."),
+            ui::caption(
+                "A pattern-based DAW: channel rack, piano roll, playlist, mixer and an MCP server."
+            ),
             ui::caption("Space plays. Ctrl+S saves. Ctrl+E renders. Escape stops all sound."),
         ]
         .spacing(6),
@@ -137,7 +184,9 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
 /// A label above a control, where the label is built at call time.
 fn labelled<'a>(label: String, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    column![ui::caption(label), content.into()].spacing(2).into()
+    column![ui::caption(label), content.into()]
+        .spacing(2)
+        .into()
 }
 
 fn card<'a>(title: &'a str, body: impl Into<Element<'a, Message>>) -> Element<'a, Message> {

@@ -55,7 +55,12 @@ pub struct Envelope {
 
 impl Envelope {
     pub const fn new(attack: f32, decay: f32, sustain: f32, release: f32) -> Self {
-        Self { attack, decay, sustain, release }
+        Self {
+            attack,
+            decay,
+            sustain,
+            release,
+        }
     }
 
     pub fn sanitise(&mut self) {
@@ -257,8 +262,16 @@ impl Default for SynthPatch {
         Self {
             osc: [
                 Oscillator::default(),
-                Oscillator { enabled: false, ..Oscillator::default() },
-                Oscillator { enabled: false, waveform: Waveform::Sine, semitones: -12.0, ..Oscillator::default() },
+                Oscillator {
+                    enabled: false,
+                    ..Oscillator::default()
+                },
+                Oscillator {
+                    enabled: false,
+                    waveform: Waveform::Sine,
+                    semitones: -12.0,
+                    ..Oscillator::default()
+                },
             ],
             amp_env: Envelope::default(),
             filter: FilterKind::LowPass,
@@ -298,9 +311,24 @@ impl SynthPatch {
     pub fn bass() -> Self {
         Self {
             osc: [
-                Oscillator { waveform: Waveform::Saw, level: 0.85, unison: 2, spread: 8.0, ..Default::default() },
-                Oscillator { enabled: true, waveform: Waveform::Square, semitones: -12.0, level: 0.5, ..Default::default() },
-                Oscillator { enabled: false, ..Default::default() },
+                Oscillator {
+                    waveform: Waveform::Saw,
+                    level: 0.85,
+                    unison: 2,
+                    spread: 8.0,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: true,
+                    waveform: Waveform::Square,
+                    semitones: -12.0,
+                    level: 0.5,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: false,
+                    ..Default::default()
+                },
             ],
             amp_env: Envelope::new(0.003, 0.18, 0.65, 0.12),
             cutoff: 1_400.0,
@@ -318,9 +346,27 @@ impl SynthPatch {
     pub fn lead() -> Self {
         Self {
             osc: [
-                Oscillator { waveform: Waveform::Saw, level: 0.7, unison: 5, spread: 18.0, width: 0.8, ..Default::default() },
-                Oscillator { enabled: true, waveform: Waveform::Saw, cents: -9.0, level: 0.5, unison: 3, spread: 22.0, ..Default::default() },
-                Oscillator { enabled: false, ..Default::default() },
+                Oscillator {
+                    waveform: Waveform::Saw,
+                    level: 0.7,
+                    unison: 5,
+                    spread: 18.0,
+                    width: 0.8,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: true,
+                    waveform: Waveform::Saw,
+                    cents: -9.0,
+                    level: 0.5,
+                    unison: 3,
+                    spread: 22.0,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: false,
+                    ..Default::default()
+                },
             ],
             amp_env: Envelope::new(0.01, 0.3, 0.7, 0.35),
             cutoff: 6_500.0,
@@ -334,16 +380,41 @@ impl SynthPatch {
     pub fn pad() -> Self {
         Self {
             osc: [
-                Oscillator { waveform: Waveform::Triangle, level: 0.6, unison: 3, spread: 14.0, ..Default::default() },
-                Oscillator { enabled: true, waveform: Waveform::Saw, semitones: 7.0, level: 0.35, unison: 2, ..Default::default() },
-                Oscillator { enabled: true, waveform: Waveform::Sine, semitones: -12.0, level: 0.4, ..Default::default() },
+                Oscillator {
+                    waveform: Waveform::Triangle,
+                    level: 0.6,
+                    unison: 3,
+                    spread: 14.0,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: true,
+                    waveform: Waveform::Saw,
+                    semitones: 7.0,
+                    level: 0.35,
+                    unison: 2,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: true,
+                    waveform: Waveform::Sine,
+                    semitones: -12.0,
+                    level: 0.4,
+                    ..Default::default()
+                },
             ],
             amp_env: Envelope::new(0.35, 0.6, 0.8, 0.9),
             cutoff: 4_200.0,
             resonance: 0.1,
             filter_env_amount: 0.8,
             filter_env: Envelope::new(0.5, 1.2, 0.6, 0.8),
-            lfo: Lfo { enabled: true, rate: 0.35, depth: 0.06, target: LfoTarget::FilterCutoff, ..Default::default() },
+            lfo: Lfo {
+                enabled: true,
+                rate: 0.35,
+                depth: 0.06,
+                target: LfoTarget::FilterCutoff,
+                ..Default::default()
+            },
             gain: 0.55,
             ..Default::default()
         }
@@ -352,9 +423,22 @@ impl SynthPatch {
     pub fn pluck() -> Self {
         Self {
             osc: [
-                Oscillator { waveform: Waveform::Square, level: 0.7, ..Default::default() },
-                Oscillator { enabled: true, waveform: Waveform::Saw, cents: 7.0, level: 0.4, ..Default::default() },
-                Oscillator { enabled: false, ..Default::default() },
+                Oscillator {
+                    waveform: Waveform::Square,
+                    level: 0.7,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: true,
+                    waveform: Waveform::Saw,
+                    cents: 7.0,
+                    level: 0.4,
+                    ..Default::default()
+                },
+                Oscillator {
+                    enabled: false,
+                    ..Default::default()
+                },
             ],
             amp_env: Envelope::new(0.001, 0.22, 0.0, 0.18),
             cutoff: 8_000.0,
@@ -488,7 +572,10 @@ impl SamplerPatch {
     }
 
     pub fn from_model(model: DrumModel) -> Self {
-        Self { source: SampleSource::Model(model), ..Default::default() }
+        Self {
+            source: SampleSource::Model(model),
+            ..Default::default()
+        }
     }
 
     pub fn kick() -> Self {
@@ -506,18 +593,12 @@ impl SamplerPatch {
 }
 
 /// A SoundFont program: which bank and preset the channel plays.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct SoundFontPatch {
     pub bank: u16,
     pub preset: u16,
     /// A dedicated MIDI channel is allocated per channel; drums need ch. 9.
     pub percussion: bool,
-}
-
-impl Default for SoundFontPatch {
-    fn default() -> Self {
-        Self { bank: 0, preset: 0, percussion: false }
-    }
 }
 
 /// What a channel makes sound with.
@@ -554,6 +635,20 @@ impl Instrument {
 // the same (name, value, min, max) view.
 // ---------------------------------------------------------------------------
 
+/// Names for the enumerated instrument parameters, in the order their enums
+/// declare them, so an index round-trips to the same variant.
+pub const WAVEFORM_NAMES: &[&str] = &[
+    "Sine",
+    "Triangle",
+    "Saw",
+    "Square",
+    "Pulse 25%",
+    "Pulse 12%",
+    "Noise",
+];
+pub const FILTER_NAMES: &[&str] = &["Low pass", "High pass", "Band pass", "Notch", "Off"];
+pub const LFO_TARGET_NAMES: &[&str] = &["Pitch", "Cutoff", "Volume", "Pulse width", "Pan"];
+
 /// A named, range-bounded parameter.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ParamInfo {
@@ -562,17 +657,76 @@ pub struct ParamInfo {
     pub value: f32,
     pub min: f32,
     pub max: f32,
-    /// True when the parameter is really a switch or an enum index.
+    /// True when the parameter only lands on whole numbers.
     pub stepped: bool,
+    /// True when the parameter is an on/off switch.
+    pub toggle: bool,
+    /// Set when the parameter picks from a fixed list of names.
+    pub choices: Option<&'static [&'static str]>,
+    /// A bipolar parameter draws its knob outward from the centre.
+    pub bipolar: bool,
 }
 
 impl ParamInfo {
     const fn new(name: &'static str, label: &'static str, value: f32, min: f32, max: f32) -> Self {
-        Self { name, label, value, min, max, stepped: false }
+        Self {
+            name,
+            label,
+            value,
+            min,
+            max,
+            stepped: false,
+            toggle: false,
+            choices: None,
+            bipolar: false,
+        }
     }
 
-    const fn stepped(name: &'static str, label: &'static str, value: f32, min: f32, max: f32) -> Self {
-        Self { name, label, value, min, max, stepped: true }
+    const fn bipolar(
+        name: &'static str,
+        label: &'static str,
+        value: f32,
+        min: f32,
+        max: f32,
+    ) -> Self {
+        Self {
+            bipolar: true,
+            ..Self::new(name, label, value, min, max)
+        }
+    }
+
+    const fn stepped(
+        name: &'static str,
+        label: &'static str,
+        value: f32,
+        min: f32,
+        max: f32,
+    ) -> Self {
+        Self {
+            stepped: true,
+            ..Self::new(name, label, value, min, max)
+        }
+    }
+
+    const fn switch(name: &'static str, label: &'static str, on: bool) -> Self {
+        Self {
+            toggle: true,
+            stepped: true,
+            ..Self::new(name, label, if on { 1.0 } else { 0.0 }, 0.0, 1.0)
+        }
+    }
+
+    const fn choice(
+        name: &'static str,
+        label: &'static str,
+        value: f32,
+        choices: &'static [&'static str],
+    ) -> Self {
+        Self {
+            stepped: true,
+            choices: Some(choices),
+            ..Self::new(name, label, value, 0.0, choices.len() as f32 - 1.0)
+        }
     }
 
     /// The parameter's position in its range, 0..1.
@@ -597,43 +751,192 @@ impl SynthPatch {
             // Names are built from a fixed set, so the leak-free static strings
             // below stay exhaustive.
             let (enabled, wave, semis, cents, level, unison, spread, width) = match n {
-                1 => ("osc1_enabled", "osc1_wave", "osc1_semitones", "osc1_cents", "osc1_level", "osc1_unison", "osc1_spread", "osc1_width"),
-                2 => ("osc2_enabled", "osc2_wave", "osc2_semitones", "osc2_cents", "osc2_level", "osc2_unison", "osc2_spread", "osc2_width"),
-                _ => ("osc3_enabled", "osc3_wave", "osc3_semitones", "osc3_cents", "osc3_level", "osc3_unison", "osc3_spread", "osc3_width"),
+                1 => (
+                    "osc1_enabled",
+                    "osc1_wave",
+                    "osc1_semitones",
+                    "osc1_cents",
+                    "osc1_level",
+                    "osc1_unison",
+                    "osc1_spread",
+                    "osc1_width",
+                ),
+                2 => (
+                    "osc2_enabled",
+                    "osc2_wave",
+                    "osc2_semitones",
+                    "osc2_cents",
+                    "osc2_level",
+                    "osc2_unison",
+                    "osc2_spread",
+                    "osc2_width",
+                ),
+                _ => (
+                    "osc3_enabled",
+                    "osc3_wave",
+                    "osc3_semitones",
+                    "osc3_cents",
+                    "osc3_level",
+                    "osc3_unison",
+                    "osc3_spread",
+                    "osc3_width",
+                ),
             };
-            v.push(ParamInfo::stepped(enabled, "On", if o.enabled { 1.0 } else { 0.0 }, 0.0, 1.0));
-            v.push(ParamInfo::stepped(wave, "Wave", o.waveform as u8 as f32, 0.0, 6.0));
-            v.push(ParamInfo::new(semis, "Semi", o.semitones, -48.0, 48.0));
-            v.push(ParamInfo::new(cents, "Cents", o.cents, -100.0, 100.0));
+            v.push(ParamInfo::switch(enabled, "On", o.enabled));
+            v.push(ParamInfo::choice(
+                wave,
+                "Wave",
+                o.waveform as u8 as f32,
+                WAVEFORM_NAMES,
+            ));
+            v.push(ParamInfo::bipolar(semis, "Semi", o.semitones, -48.0, 48.0));
+            v.push(ParamInfo::bipolar(cents, "Cents", o.cents, -100.0, 100.0));
             v.push(ParamInfo::new(level, "Level", o.level, 0.0, 1.0));
-            v.push(ParamInfo::stepped(unison, "Unison", o.unison as f32, 1.0, 8.0));
+            v.push(ParamInfo::stepped(
+                unison,
+                "Unison",
+                o.unison as f32,
+                1.0,
+                8.0,
+            ));
             v.push(ParamInfo::new(spread, "Spread", o.spread, 0.0, 100.0));
             v.push(ParamInfo::new(width, "Width", o.width, 0.0, 1.0));
         }
-        v.push(ParamInfo::new("attack", "Attack", self.amp_env.attack, 0.0, 8.0));
-        v.push(ParamInfo::new("decay", "Decay", self.amp_env.decay, 0.0, 8.0));
-        v.push(ParamInfo::new("sustain", "Sustain", self.amp_env.sustain, 0.0, 1.0));
-        v.push(ParamInfo::new("release", "Release", self.amp_env.release, 0.001, 8.0));
-        v.push(ParamInfo::stepped("filter", "Filter", self.filter as u8 as f32, 0.0, 4.0));
-        v.push(ParamInfo::new("cutoff", "Cutoff", self.cutoff, 20.0, 20_000.0));
-        v.push(ParamInfo::new("resonance", "Reso", self.resonance, 0.0, 0.98));
-        v.push(ParamInfo::new("filter_env_amount", "Env amt", self.filter_env_amount, -8.0, 8.0));
-        v.push(ParamInfo::new("filter_attack", "F. attack", self.filter_env.attack, 0.0, 8.0));
-        v.push(ParamInfo::new("filter_decay", "F. decay", self.filter_env.decay, 0.0, 8.0));
-        v.push(ParamInfo::new("filter_sustain", "F. sustain", self.filter_env.sustain, 0.0, 1.0));
-        v.push(ParamInfo::new("filter_release", "F. release", self.filter_env.release, 0.001, 8.0));
-        v.push(ParamInfo::new("filter_key_track", "Vel>cutoff", self.filter_key_track, 0.0, 1.0));
-        v.push(ParamInfo::stepped("lfo_enabled", "LFO on", if self.lfo.enabled { 1.0 } else { 0.0 }, 0.0, 1.0));
-        v.push(ParamInfo::stepped("lfo_wave", "LFO wave", self.lfo.waveform as u8 as f32, 0.0, 6.0));
-        v.push(ParamInfo::new("lfo_rate", "LFO rate", self.lfo.rate, 0.01, 60.0));
-        v.push(ParamInfo::new("lfo_depth", "LFO depth", self.lfo.depth, 0.0, 1.0));
-        v.push(ParamInfo::stepped("lfo_target", "LFO to", self.lfo.target as u8 as f32, 0.0, 4.0));
-        v.push(ParamInfo::new("lfo_delay", "LFO delay", self.lfo.delay, 0.0, 10.0));
+        v.push(ParamInfo::new(
+            "attack",
+            "Attack",
+            self.amp_env.attack,
+            0.0,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "decay",
+            "Decay",
+            self.amp_env.decay,
+            0.0,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "sustain",
+            "Sustain",
+            self.amp_env.sustain,
+            0.0,
+            1.0,
+        ));
+        v.push(ParamInfo::new(
+            "release",
+            "Release",
+            self.amp_env.release,
+            0.001,
+            8.0,
+        ));
+        v.push(ParamInfo::choice(
+            "filter",
+            "Filter",
+            self.filter as u8 as f32,
+            FILTER_NAMES,
+        ));
+        v.push(ParamInfo::new(
+            "cutoff",
+            "Cutoff",
+            self.cutoff,
+            20.0,
+            20_000.0,
+        ));
+        v.push(ParamInfo::new(
+            "resonance",
+            "Reso",
+            self.resonance,
+            0.0,
+            0.98,
+        ));
+        v.push(ParamInfo::bipolar(
+            "filter_env_amount",
+            "Env amt",
+            self.filter_env_amount,
+            -8.0,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "filter_attack",
+            "F. attack",
+            self.filter_env.attack,
+            0.0,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "filter_decay",
+            "F. decay",
+            self.filter_env.decay,
+            0.0,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "filter_sustain",
+            "F. sustain",
+            self.filter_env.sustain,
+            0.0,
+            1.0,
+        ));
+        v.push(ParamInfo::new(
+            "filter_release",
+            "F. release",
+            self.filter_env.release,
+            0.001,
+            8.0,
+        ));
+        v.push(ParamInfo::new(
+            "filter_key_track",
+            "Vel>cutoff",
+            self.filter_key_track,
+            0.0,
+            1.0,
+        ));
+        v.push(ParamInfo::switch("lfo_enabled", "LFO on", self.lfo.enabled));
+        v.push(ParamInfo::choice(
+            "lfo_wave",
+            "LFO wave",
+            self.lfo.waveform as u8 as f32,
+            WAVEFORM_NAMES,
+        ));
+        v.push(ParamInfo::new(
+            "lfo_rate",
+            "LFO rate",
+            self.lfo.rate,
+            0.01,
+            60.0,
+        ));
+        v.push(ParamInfo::new(
+            "lfo_depth",
+            "LFO depth",
+            self.lfo.depth,
+            0.0,
+            1.0,
+        ));
+        v.push(ParamInfo::choice(
+            "lfo_target",
+            "LFO to",
+            self.lfo.target as u8 as f32,
+            LFO_TARGET_NAMES,
+        ));
+        v.push(ParamInfo::new(
+            "lfo_delay",
+            "LFO delay",
+            self.lfo.delay,
+            0.0,
+            10.0,
+        ));
         v.push(ParamInfo::new("glide", "Glide", self.glide, 0.0, 5.0));
-        v.push(ParamInfo::stepped("mono", "Mono", if self.mono { 1.0 } else { 0.0 }, 0.0, 1.0));
+        v.push(ParamInfo::switch("mono", "Mono", self.mono));
         v.push(ParamInfo::new("gain", "Gain", self.gain, 0.0, 2.0));
         v.push(ParamInfo::new("drive", "Drive", self.drive, 0.0, 1.0));
-        v.push(ParamInfo::new("velocity_amount", "Vel amt", self.velocity_amount, 0.0, 1.0));
+        v.push(ParamInfo::new(
+            "velocity_amount",
+            "Vel amt",
+            self.velocity_amount,
+            0.0,
+            1.0,
+        ));
         v
     }
 
@@ -642,7 +945,9 @@ impl SynthPatch {
             Waveform::ALL[(v.clamp(0.0, 6.0) as usize).min(6)]
         }
         let osc_index = match name.as_bytes() {
-            [b'o', b's', b'c', d, b'_', ..] if (b'1'..=b'3').contains(d) => Some((d - b'1') as usize),
+            [b'o', b's', b'c', d, b'_', ..] if (b'1'..=b'3').contains(d) => {
+                Some((d - b'1') as usize)
+            }
             _ => None,
         };
         if let Some(i) = osc_index {
@@ -726,19 +1031,19 @@ impl SamplerPatch {
     pub fn params(&self) -> Vec<ParamInfo> {
         vec![
             ParamInfo::new("root_key", "Root", self.root_key as f32, 0.0, 127.0),
-            ParamInfo::new("tune", "Tune", self.tune, -48.0, 48.0),
-            ParamInfo::new("fine", "Fine", self.fine, -100.0, 100.0),
-            ParamInfo::stepped("reverse", "Reverse", if self.reverse { 1.0 } else { 0.0 }, 0.0, 1.0),
-            ParamInfo::stepped("loop", "Loop", if self.loop_sample { 1.0 } else { 0.0 }, 0.0, 1.0),
+            ParamInfo::bipolar("tune", "Tune", self.tune, -48.0, 48.0),
+            ParamInfo::bipolar("fine", "Fine", self.fine, -100.0, 100.0),
+            ParamInfo::switch("reverse", "Reverse", self.reverse),
+            ParamInfo::switch("loop", "Loop", self.loop_sample),
             ParamInfo::new("start", "Start", self.start, 0.0, 1.0),
             ParamInfo::new("end", "End", self.end, 0.0, 1.0),
             ParamInfo::new("attack", "Attack", self.envelope.attack, 0.0, 8.0),
             ParamInfo::new("decay", "Decay", self.envelope.decay, 0.0, 8.0),
             ParamInfo::new("sustain", "Sustain", self.envelope.sustain, 0.0, 1.0),
             ParamInfo::new("release", "Release", self.envelope.release, 0.001, 8.0),
-            ParamInfo::stepped("gated", "Gated", if self.gated { 1.0 } else { 0.0 }, 0.0, 1.0),
+            ParamInfo::switch("gated", "Gated", self.gated),
             ParamInfo::new("gain", "Gain", self.gain, 0.0, 2.0),
-            ParamInfo::stepped("filter", "Filter", self.filter as u8 as f32, 0.0, 4.0),
+            ParamInfo::choice("filter", "Filter", self.filter as u8 as f32, FILTER_NAMES),
             ParamInfo::new("cutoff", "Cutoff", self.cutoff, 20.0, 20_000.0),
             ParamInfo::new("resonance", "Reso", self.resonance, 0.0, 0.98),
             ParamInfo::new("velocity_amount", "Vel amt", self.velocity_amount, 0.0, 1.0),
@@ -775,7 +1080,7 @@ impl SoundFontPatch {
         vec![
             ParamInfo::stepped("bank", "Bank", self.bank as f32, 0.0, 128.0),
             ParamInfo::stepped("preset", "Preset", self.preset as f32, 0.0, 127.0),
-            ParamInfo::stepped("percussion", "Drums", if self.percussion { 1.0 } else { 0.0 }, 0.0, 1.0),
+            ParamInfo::switch("percussion", "Drums", self.percussion),
         ]
     }
 

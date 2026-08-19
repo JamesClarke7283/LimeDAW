@@ -9,6 +9,7 @@ pub mod app;
 pub mod audio;
 pub mod config;
 pub mod editing;
+pub mod icon;
 pub mod mcp;
 pub mod mcp_dispatch;
 pub mod model;
@@ -18,6 +19,30 @@ pub mod theme;
 pub mod ui;
 
 pub use app::{LimeDaw, Message};
+
+/// The size the window should open at.
+///
+/// On the desktop this is a sensible default. In a browser the canvas has to
+/// match the viewport or it is scaled by CSS and everything looks soft and
+/// mispositioned, so the page's own dimensions are used instead.
+fn initial_window_size() -> iced::Size {
+    #[cfg(target_arch = "wasm32")]
+    {
+        if let Some(size) = browser_viewport() {
+            return size;
+        }
+    }
+    iced::Size::new(1440.0, 900.0)
+}
+
+/// The browser's inner dimensions, in logical pixels.
+#[cfg(target_arch = "wasm32")]
+pub fn browser_viewport() -> Option<iced::Size> {
+    let window = web_sys::window()?;
+    let width = window.inner_width().ok()?.as_f64()?;
+    let height = window.inner_height().ok()?.as_f64()?;
+    (width > 1.0 && height > 1.0).then(|| iced::Size::new(width as f32, height as f32))
+}
 
 /// Start the interface. Shared by the desktop binary and the wasm entry point.
 pub fn run() -> iced::Result {
@@ -48,8 +73,11 @@ pub fn run() -> iced::Result {
         .subscription(LimeDaw::subscription)
         .antialiasing(true)
         .window(iced::window::Settings {
-            size: iced::Size::new(1440.0, 900.0),
-            min_size: Some(iced::Size::new(880.0, 560.0)),
+            size: initial_window_size(),
+            // The browser canvas is whatever the page gives it, so a minimum
+            // would only fight the viewport there.
+            min_size: (!cfg!(target_arch = "wasm32")).then(|| iced::Size::new(880.0, 560.0)),
+            icon: icon::window_icon(),
             ..Default::default()
         })
         .run()

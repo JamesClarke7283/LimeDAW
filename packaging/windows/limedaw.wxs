@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX v4/v5 installer definition for LimeDAW.
+
+  Built by packaging/windows/build-msi.ps1, which passes the version,
+  architecture and the path to the compiled binary in as preprocessor
+  variables so the same file serves both x64 and ARM64.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="LimeDAW"
+           Manufacturer="LimeDAW"
+           Version="$(var.Version)"
+           UpgradeCode="6f3c1d9e-9a4b-4f27-9a3e-7c1f0b5a2d84"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of LimeDAW is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="LimeIcon" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="LimeIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/JamesClarke7283/LimeDAW" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/JamesClarke7283/LimeDAW" />
+
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicensePath)" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="LimeDAW" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="AppMenuFolder" Name="LimeDAW" />
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="LimeDAW" Level="1">
+      <ComponentGroupRef Id="AppComponents" />
+    </Feature>
+
+    <ComponentGroup Id="AppComponents">
+      <Component Directory="INSTALLFOLDER" Id="MainExecutable" Guid="*">
+        <File Id="LimeDawExe" Source="$(var.BinaryPath)" Name="limedaw.exe" KeyPath="yes">
+          <!-- Double-clicking a project opens it. -->
+          <Shortcut Id="DesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="LimeDAW"
+                    Description="Write, arrange and mix music"
+                    Icon="LimeIcon"
+                    Advertise="yes" />
+          <Shortcut Id="StartMenuShortcut"
+                    Directory="AppMenuFolder"
+                    Name="LimeDAW"
+                    Description="Write, arrange and mix music"
+                    Icon="LimeIcon"
+                    Advertise="yes" />
+        </File>
+
+        <!-- Register .lime so projects open with a double click. -->
+        <ProgId Id="LimeDAW.Project" Description="LimeDAW project" Icon="LimeIcon">
+          <Extension Id="lime" ContentType="application/x-limedaw-project">
+            <Verb Id="open" Command="Open" Argument="&quot;%1&quot;" />
+          </Extension>
+        </ProgId>
+      </Component>
+
+      <Component Directory="INSTALLFOLDER" Id="ReadmeDoc" Guid="*">
+        <File Id="ReadmeFile" Source="$(var.ReadmePath)" Name="README.md" KeyPath="yes" />
+      </Component>
+
+      <Component Directory="AppMenuFolder" Id="MenuFolderCleanup" Guid="*">
+        <RemoveFolder Id="RemoveAppMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\LimeDAW"
+                       Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

@@ -19,8 +19,11 @@ pub enum RendererChoice {
 }
 
 impl RendererChoice {
-    pub const ALL: [RendererChoice; 3] =
-        [RendererChoice::Auto, RendererChoice::Gpu, RendererChoice::Software];
+    pub const ALL: [RendererChoice; 3] = [
+        RendererChoice::Auto,
+        RendererChoice::Gpu,
+        RendererChoice::Software,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -56,7 +59,9 @@ impl std::fmt::Display for RendererChoice {
 
 /// A short comment at the top of the settings file, so anyone opening it in an
 /// editor knows what they are looking at.
-const SETTINGS_HEADER: &str = "# LimeDAW settings\n# Edited by the app; hand edits are picked up on the next start.\n\n";
+#[cfg(not(target_arch = "wasm32"))]
+const SETTINGS_HEADER: &str =
+    "# LimeDAW settings\n# Edited by the app; hand edits are picked up on the next start.\n\n";
 
 /// Everything the app remembers between runs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,8 +89,20 @@ pub struct Settings {
     pub soundfont: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_project: Option<String>,
+    /// Audio buffer size in frames. Bigger is safer on a busy machine; smaller
+    /// responds faster when playing live.
+    pub buffer_frames: u32,
     /// Recently opened project paths, most recent first.
     pub recent_projects: Vec<String>,
+}
+
+/// The buffer sizes offered in the settings.
+pub const BUFFER_SIZES: [u32; 5] = [256, 512, 1024, 2048, 4096];
+
+/// How a buffer size reads to a musician: frames and the latency they imply.
+pub fn describe_buffer(frames: u32, sample_rate: f32) -> String {
+    let ms = frames as f32 / sample_rate.max(1.0) * 1000.0;
+    format!("{frames} frames · {ms:.0} ms")
 }
 
 impl Default for Settings {
@@ -103,6 +120,7 @@ impl Default for Settings {
             show_browser: true,
             show_instrument_panel: true,
             default_velocity: 0.78,
+            buffer_frames: 1024,
             recent_projects: Vec::new(),
         }
     }
@@ -114,6 +132,9 @@ impl Settings {
         self.default_velocity = self.default_velocity.clamp(0.05, 1.0);
         if !(1.0 / 64.0..=8.0).contains(&self.grid_snap) {
             self.grid_snap = 0.25;
+        }
+        if !BUFFER_SIZES.contains(&self.buffer_frames) {
+            self.buffer_frames = 1024;
         }
         self.recent_projects.truncate(12);
     }

@@ -38,7 +38,10 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
     column![
         ui::transport::view(app),
-        container(body).width(Length::Fill).height(Length::Fill).padding([0, 6]),
+        container(body)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding([0, 6]),
         status_bar(app),
     ]
     .spacing(4)
@@ -47,7 +50,10 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 }
 
 fn wants_instrument_panel(view: MainView) -> bool {
-    matches!(view, MainView::Channels | MainView::PianoRoll | MainView::Playlist)
+    matches!(
+        view,
+        MainView::Channels | MainView::PianoRoll | MainView::Playlist
+    )
 }
 
 fn piano_roll_area(app: &LimeDaw) -> Element<'_, Message> {
@@ -74,7 +80,11 @@ fn status_bar(app: &LimeDaw) -> Element<'_, Message> {
         None => "not saved yet".into(),
     };
 
-    let mcp_state = if app.mcp.is_some() { "MCP on" } else { "MCP off" };
+    let mcp_state = if app.mcp.is_some() {
+        "MCP on"
+    } else {
+        "MCP off"
+    };
 
     container(
         row![

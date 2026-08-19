@@ -107,13 +107,14 @@ fn strip(app: &LimeDaw, index: usize) -> Element<'_, Message> {
     let body = column![
         name,
         pan,
-        row![
-            slider_column(fader),
-            meters,
-        ]
-        .spacing(4)
-        .align_y(Alignment::Center),
-        text(format!("{:.1} dB", crate::audio::dsp::gain_to_db(track.volume))).size(9),
+        row![slider_column(fader), meters,]
+            .spacing(4)
+            .align_y(Alignment::Center),
+        text(format!(
+            "{:.1} dB",
+            crate::audio::dsp::gain_to_db(track.volume)
+        ))
+        .size(9),
         row![mute, solo].spacing(4),
         ui::caption(fx_label),
     ]

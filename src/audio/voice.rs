@@ -62,7 +62,11 @@ impl SynthVoice {
 
         self.key_target = key;
         self.key_current = glide_from.unwrap_or(key);
-        self.glide_rate = if patch.glide > 0.0 { 1.0 / (patch.glide * sr) } else { 1.0 };
+        self.glide_rate = if patch.glide > 0.0 {
+            1.0 / (patch.glide * sr)
+        } else {
+            1.0
+        };
 
         for (o, osc_patch) in patch.osc.iter().enumerate() {
             if osc_patch.phase > 0.0 {
@@ -77,7 +81,11 @@ impl SynthVoice {
     /// Retrigger for a legato note without restarting the envelopes.
     fn glide_to(&mut self, key: f32, patch: &SynthPatch, sr: f32) {
         self.key_target = key;
-        self.glide_rate = if patch.glide > 0.0 { 1.0 / (patch.glide * sr) } else { 1.0 };
+        self.glide_rate = if patch.glide > 0.0 {
+            1.0 / (patch.glide * sr)
+        } else {
+            1.0
+        };
     }
 
     fn release(&mut self) {
@@ -113,10 +121,26 @@ impl SynthVoice {
             lfo_value = raw * patch.lfo.depth * fade;
         }
 
-        let pitch_mod = if matches!(patch.lfo.target, LfoTarget::Pitch) { lfo_value * 2.0 } else { 0.0 };
-        let pw_mod = if matches!(patch.lfo.target, LfoTarget::PulseWidth) { lfo_value * 0.4 } else { 0.0 };
-        let amp_mod = if matches!(patch.lfo.target, LfoTarget::Amplitude) { 1.0 - lfo_value.abs() } else { 1.0 };
-        let pan_mod = if matches!(patch.lfo.target, LfoTarget::Pan) { lfo_value } else { 0.0 };
+        let pitch_mod = if matches!(patch.lfo.target, LfoTarget::Pitch) {
+            lfo_value * 2.0
+        } else {
+            0.0
+        };
+        let pw_mod = if matches!(patch.lfo.target, LfoTarget::PulseWidth) {
+            lfo_value * 0.4
+        } else {
+            0.0
+        };
+        let amp_mod = if matches!(patch.lfo.target, LfoTarget::Amplitude) {
+            1.0 - lfo_value.abs()
+        } else {
+            1.0
+        };
+        let pan_mod = if matches!(patch.lfo.target, LfoTarget::Pan) {
+            lfo_value
+        } else {
+            0.0
+        };
 
         let base_key = self.key_current + pitch_mod;
 
@@ -164,8 +188,12 @@ impl SynthVoice {
         }
         let cutoff = cutoff.clamp(20.0, sr * 0.45);
         if !matches!(patch.filter, FilterKind::Off) {
-            left = self.filter_l.process(left, patch.filter, cutoff, patch.resonance, sr);
-            right = self.filter_r.process(right, patch.filter, cutoff, patch.resonance, sr);
+            left = self
+                .filter_l
+                .process(left, patch.filter, cutoff, patch.resonance, sr);
+            right = self
+                .filter_r
+                .process(right, patch.filter, cutoff, patch.resonance, sr);
         }
 
         if patch.drive > 0.0 {
@@ -180,7 +208,10 @@ impl SynthVoice {
             * (1.0 - patch.velocity_amount + patch.velocity_amount * velocity);
 
         let (pl, pr) = pan_gains(pan_mod);
-        (left * amp * pl * 1.4142, right * amp * pr * 1.4142)
+        (
+            left * amp * pl * std::f32::consts::SQRT_2,
+            right * amp * pr * std::f32::consts::SQRT_2,
+        )
     }
 }
 
@@ -201,7 +232,14 @@ pub struct SamplerVoice {
 }
 
 impl SamplerVoice {
-    fn start(&mut self, patch: &SamplerPatch, sample: Option<Arc<Sample>>, key: u8, fine: f32, sr: f32) {
+    fn start(
+        &mut self,
+        patch: &SamplerPatch,
+        sample: Option<Arc<Sample>>,
+        key: u8,
+        fine: f32,
+        sr: f32,
+    ) {
         self.env.configure(&patch.envelope, sr);
         self.env.retrigger_from_zero();
         self.filter_l.reset();
@@ -212,8 +250,14 @@ impl SamplerVoice {
 
         let len = sample.as_ref().map(|s| s.len()).unwrap_or(0) as f32;
         self.start_frame = (patch.start.clamp(0.0, 1.0) * len).floor();
-        self.end_frame = (patch.end.clamp(0.0, 1.0) * len).ceil().max(self.start_frame + 1.0);
-        self.position = if self.reverse { self.end_frame - 1.0 } else { self.start_frame };
+        self.end_frame = (patch.end.clamp(0.0, 1.0) * len)
+            .ceil()
+            .max(self.start_frame + 1.0);
+        self.position = if self.reverse {
+            self.end_frame - 1.0
+        } else {
+            self.start_frame
+        };
 
         let semis = key as f32 - patch.root_key as f32 + patch.tune + (patch.fine + fine) / 100.0;
         let ratio = (semis / 12.0).exp2();
@@ -264,8 +308,12 @@ impl SamplerVoice {
         }
 
         if !matches!(patch.filter, FilterKind::Off) {
-            l = self.filter_l.process(l, patch.filter, patch.cutoff, patch.resonance, sr);
-            r = self.filter_r.process(r, patch.filter, patch.cutoff, patch.resonance, sr);
+            l = self
+                .filter_l
+                .process(l, patch.filter, patch.cutoff, patch.resonance, sr);
+            r = self
+                .filter_r
+                .process(r, patch.filter, patch.cutoff, patch.resonance, sr);
         }
 
         let amp = self.env.next()
@@ -276,6 +324,11 @@ impl SamplerVoice {
 }
 
 /// The sound-producing half of a voice.
+///
+/// The synth arm is much the larger, but the pool is preallocated and a voice
+/// switches between the two in place, so boxing would only add an indirection
+/// on the audio thread.
+#[allow(clippy::large_enum_variant)]
 pub enum VoiceKind {
     Synth(SynthVoice),
     Sampler(SamplerVoice),
@@ -320,6 +373,9 @@ impl Default for Voice {
 }
 
 impl Voice {
+    /// Note-on for a synth voice. Everything a voice needs arrives at once
+    /// because the audio thread has no room to look any of it up again.
+    #[allow(clippy::too_many_arguments)]
     pub fn start_synth(
         &mut self,
         channel: Id,
@@ -354,6 +410,7 @@ impl Voice {
         self.releasing = false;
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn start_sampler(
         &mut self,
         channel: Id,
@@ -454,7 +511,10 @@ impl Voice {
         };
         if self.pan.abs() > 1e-4 {
             let (gl, gr) = pan_gains(self.pan);
-            (l * gl * 1.4142, r * gr * 1.4142)
+            (
+                l * gl * std::f32::consts::SQRT_2,
+                r * gr * std::f32::consts::SQRT_2,
+            )
         } else {
             (l, r)
         }

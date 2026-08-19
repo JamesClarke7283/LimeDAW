@@ -99,7 +99,11 @@ impl ServerHandle {
             }
         });
 
-        Ok(Self { socket_path, shutdown: Some(shutdown_tx), _runtime: runtime })
+        Ok(Self {
+            socket_path,
+            shutdown: Some(shutdown_tx),
+            _runtime: runtime,
+        })
     }
 }
 
@@ -159,15 +163,9 @@ async fn serve_connection(
             )),
             Ok(value) => match serde_json::from_value::<Request>(value) {
                 Ok(request) => dispatch(request, &jobs).await,
-                Err(err) => match id {
-                    // Without an id it is a notification; nothing to answer.
-                    None => None,
-                    Some(id) => Some(Response::err(
-                        id,
-                        -32600,
-                        format!("invalid request: {err}"),
-                    )),
-                },
+                Err(err) => {
+                    id.map(|id| Response::err(id, -32600, format!("invalid request: {err}")))
+                }
             },
         };
         if let Some(response) = response {
@@ -263,7 +261,11 @@ async fn dispatch(request: Request, jobs: &mpsc::UnboundedSender<Job>) -> Option
 }
 
 fn finish(is_notification: bool, response: Response) -> Option<Response> {
-    if is_notification { None } else { Some(response) }
+    if is_notification {
+        None
+    } else {
+        Some(response)
+    }
 }
 
 /// Hand a tool call to the application and wait for its answer.
@@ -273,7 +275,11 @@ async fn run_tool(
     arguments: Value,
 ) -> Result<Value, String> {
     let (reply_tx, reply_rx) = oneshot::channel();
-    let job = Job { tool: tool.to_string(), arguments, reply: reply_tx };
+    let job = Job {
+        tool: tool.to_string(),
+        arguments,
+        reply: reply_tx,
+    };
     jobs.unbounded_send(job)
         .map_err(|_| "LimeDAW is not accepting commands".to_string())?;
 

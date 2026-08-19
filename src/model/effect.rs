@@ -21,7 +21,13 @@ pub struct ReverbParams {
 
 impl Default for ReverbParams {
     fn default() -> Self {
-        Self { size: 0.6, damping: 0.45, width: 0.9, predelay: 12.0, mix: 0.25 }
+        Self {
+            size: 0.6,
+            damping: 0.45,
+            width: 0.9,
+            predelay: 12.0,
+            mix: 0.25,
+        }
     }
 }
 
@@ -39,7 +45,14 @@ pub struct DelayParams {
 
 impl Default for DelayParams {
     fn default() -> Self {
-        Self { time: 0.375, sync: true, feedback: 0.38, ping_pong: true, damping: 6_000.0, mix: 0.22 }
+        Self {
+            time: 0.375,
+            sync: true,
+            feedback: 0.38,
+            ping_pong: true,
+            damping: 6_000.0,
+            mix: 0.22,
+        }
     }
 }
 
@@ -54,7 +67,13 @@ pub struct ChorusParams {
 
 impl Default for ChorusParams {
     fn default() -> Self {
-        Self { rate: 0.8, depth: 0.35, voices: 3, spread: 0.7, mix: 0.35 }
+        Self {
+            rate: 0.8,
+            depth: 0.35,
+            voices: 3,
+            spread: 0.7,
+            mix: 0.35,
+        }
     }
 }
 
@@ -70,7 +89,13 @@ pub struct DistortionParams {
 
 impl Default for DistortionParams {
     fn default() -> Self {
-        Self { drive: 0.35, shape: 0, tone: 0.6, output: 0.8, mix: 1.0 }
+        Self {
+            drive: 0.35,
+            shape: 0,
+            tone: 0.6,
+            output: 0.8,
+            mix: 1.0,
+        }
     }
 }
 
@@ -86,7 +111,13 @@ pub struct FilterParams {
 
 impl Default for FilterParams {
     fn default() -> Self {
-        Self { kind: FilterKind::LowPass, cutoff: 8_000.0, resonance: 0.2, env_follow: 0.0, mix: 1.0 }
+        Self {
+            kind: FilterKind::LowPass,
+            cutoff: 8_000.0,
+            resonance: 0.2,
+            env_follow: 0.0,
+            mix: 1.0,
+        }
     }
 }
 
@@ -133,7 +164,15 @@ pub struct CompressorParams {
 
 impl Default for CompressorParams {
     fn default() -> Self {
-        Self { threshold: -18.0, ratio: 4.0, attack: 8.0, release: 120.0, makeup: 0.0, knee: 6.0, mix: 1.0 }
+        Self {
+            threshold: -18.0,
+            ratio: 4.0,
+            attack: 8.0,
+            release: 120.0,
+            makeup: 0.0,
+            knee: 6.0,
+            mix: 1.0,
+        }
     }
 }
 
@@ -145,7 +184,10 @@ pub struct LimiterParams {
 
 impl Default for LimiterParams {
     fn default() -> Self {
-        Self { ceiling: -0.3, release: 60.0 }
+        Self {
+            ceiling: -0.3,
+            release: 60.0,
+        }
     }
 }
 
@@ -160,7 +202,11 @@ pub struct BitcrushParams {
 
 impl Default for BitcrushParams {
     fn default() -> Self {
-        Self { bits: 10.0, downsample: 2.0, mix: 0.6 }
+        Self {
+            bits: 10.0,
+            downsample: 2.0,
+            mix: 0.6,
+        }
     }
 }
 
@@ -175,7 +221,13 @@ pub struct PhaserParams {
 
 impl Default for PhaserParams {
     fn default() -> Self {
-        Self { rate: 0.4, depth: 0.7, feedback: 0.4, stages: 6, mix: 0.5 }
+        Self {
+            rate: 0.4,
+            depth: 0.7,
+            feedback: 0.4,
+            stages: 6,
+            mix: 0.5,
+        }
     }
 }
 
@@ -189,7 +241,12 @@ pub struct FlangerParams {
 
 impl Default for FlangerParams {
     fn default() -> Self {
-        Self { rate: 0.25, depth: 0.6, feedback: 0.5, mix: 0.4 }
+        Self {
+            rate: 0.25,
+            depth: 0.6,
+            feedback: 0.5,
+            mix: 0.4,
+        }
     }
 }
 
@@ -203,7 +260,12 @@ pub struct GateParams {
 
 impl Default for GateParams {
     fn default() -> Self {
-        Self { threshold: -45.0, attack: 1.0, hold: 20.0, release: 80.0 }
+        Self {
+            threshold: -45.0,
+            attack: 1.0,
+            hold: 20.0,
+            release: 80.0,
+        }
     }
 }
 
@@ -217,7 +279,10 @@ pub struct StereoParams {
 
 impl Default for StereoParams {
     fn default() -> Self {
-        Self { width: 1.0, bass_mono: 0.0 }
+        Self {
+            width: 1.0,
+            bass_mono: 0.0,
+        }
     }
 }
 
@@ -542,7 +607,11 @@ impl EffectKind {
     fn sanitise(&mut self) {
         let params: Vec<(&'static str, f32, f32, f32)> = self.params();
         for (name, value, lo, hi) in params {
-            let clamped = if value.is_finite() { value.clamp(lo, hi) } else { lo };
+            let clamped = if value.is_finite() {
+                value.clamp(lo, hi)
+            } else {
+                lo
+            };
             if clamped != value {
                 let _ = self.set_param(name, clamped);
             }
@@ -559,7 +628,10 @@ pub struct Effect {
 
 impl Effect {
     pub fn new(kind: EffectKind) -> Self {
-        Self { kind, enabled: true }
+        Self {
+            kind,
+            enabled: true,
+        }
     }
 
     pub fn from_slug(slug: &str) -> Option<Self> {
@@ -573,4 +645,633 @@ impl Effect {
     pub fn sanitise(&mut self) {
         self.kind.sanitise();
     }
+}
+
+// ---------------------------------------------------------------------------
+// Presentation metadata
+//
+// The interface needs to know more about a parameter than its range: whether
+// it is a switch, whether it picks from a list, and which other parameters it
+// belongs next to. Keeping that here means the effect rack stays generic and a
+// new effect only has to be described once.
+// ---------------------------------------------------------------------------
+
+/// How a parameter should be presented.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamKind {
+    /// A knob.
+    Continuous,
+    /// A knob that only lands on whole numbers.
+    Stepped,
+    /// An on/off button.
+    Toggle,
+    /// A menu of named values, indexed from zero.
+    Choice(&'static [&'static str]),
+}
+
+/// A named group of parameters, drawn together in the rack.
+pub type ParamGroup = (&'static str, &'static [&'static str]);
+
+/// A named set of parameter values.
+pub type EffectPreset = (&'static str, &'static [(&'static str, f32)]);
+
+/// The families the "add effect" menu is organised by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectCategory {
+    Dynamics,
+    Tone,
+    Modulation,
+    Time,
+    Drive,
+    Stereo,
+}
+
+impl EffectCategory {
+    pub const ALL: [EffectCategory; 6] = [
+        EffectCategory::Dynamics,
+        EffectCategory::Tone,
+        EffectCategory::Modulation,
+        EffectCategory::Time,
+        EffectCategory::Drive,
+        EffectCategory::Stereo,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            EffectCategory::Dynamics => "Dynamics",
+            EffectCategory::Tone => "Tone",
+            EffectCategory::Modulation => "Modulation",
+            EffectCategory::Time => "Time",
+            EffectCategory::Drive => "Drive",
+            EffectCategory::Stereo => "Stereo",
+        }
+    }
+}
+
+const FILTER_KINDS: &[&str] = &["Low pass", "High pass", "Band pass", "Notch", "Off"];
+const CLIP_SHAPES: &[&str] = &["Soft", "Hard", "Fold"];
+
+impl EffectKind {
+    /// A one-line explanation, shown under the effect's name.
+    pub fn description(&self) -> &'static str {
+        match self {
+            EffectKind::Reverb(_) => {
+                "Space and tail. Raise size for a bigger room, damping to soften it."
+            }
+            EffectKind::Delay(_) => {
+                "Repeats in time with the song. Ping-pong bounces them across the stereo field."
+            }
+            EffectKind::Chorus(_) => "Detuned copies, for width and thickness.",
+            EffectKind::Distortion(_) => "Drive into saturation, clipping or foldback.",
+            EffectKind::Filter(_) => "Sweepable filter, optionally following the input level.",
+            EffectKind::Eq(_) => "Three bands: a low shelf, a sweepable peak and a high shelf.",
+            EffectKind::Compressor(_) => {
+                "Evens out level. Lower the threshold and raise the ratio to squeeze harder."
+            }
+            EffectKind::Limiter(_) => "A ceiling nothing gets past, with a short look-ahead.",
+            EffectKind::Bitcrush(_) => "Reduces bit depth and sample rate for lo-fi grit.",
+            EffectKind::Phaser(_) => "Sweeping notches for movement.",
+            EffectKind::Flanger(_) => "A very short modulated delay, for jet-engine sweeps.",
+            EffectKind::Gate(_) => "Closes below the threshold, for tightening drums.",
+            EffectKind::Stereo(_) => {
+                "Widens or narrows the image, and can collapse the bass to mono."
+            }
+        }
+    }
+
+    pub fn category(&self) -> EffectCategory {
+        match self {
+            EffectKind::Compressor(_) | EffectKind::Limiter(_) | EffectKind::Gate(_) => {
+                EffectCategory::Dynamics
+            }
+            EffectKind::Eq(_) | EffectKind::Filter(_) => EffectCategory::Tone,
+            EffectKind::Chorus(_) | EffectKind::Phaser(_) | EffectKind::Flanger(_) => {
+                EffectCategory::Modulation
+            }
+            EffectKind::Reverb(_) | EffectKind::Delay(_) => EffectCategory::Time,
+            EffectKind::Distortion(_) | EffectKind::Bitcrush(_) => EffectCategory::Drive,
+            EffectKind::Stereo(_) => EffectCategory::Stereo,
+        }
+    }
+
+    /// How each parameter should be drawn.
+    pub fn param_kind(&self, name: &str) -> ParamKind {
+        match (self, name) {
+            (EffectKind::Filter(_), "kind") => ParamKind::Choice(FILTER_KINDS),
+            (EffectKind::Distortion(_), "shape") => ParamKind::Choice(CLIP_SHAPES),
+            (EffectKind::Delay(_), "sync" | "ping_pong") => ParamKind::Toggle,
+            (_, "bits" | "stages" | "voices" | "downsample") => ParamKind::Stepped,
+            _ => ParamKind::Continuous,
+        }
+    }
+
+    /// Parameters grouped the way they are laid out in the rack.
+    pub fn groups(&self) -> &'static [ParamGroup] {
+        match self {
+            EffectKind::Reverb(_) => &[
+                ("Space", &["size", "predelay"]),
+                ("Tone", &["damping", "width"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Delay(_) => &[
+                ("Time", &["time", "sync"]),
+                ("Feedback", &["feedback", "damping", "ping_pong"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Chorus(_) => &[
+                ("Motion", &["rate", "depth"]),
+                ("Voices", &["voices", "spread"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Distortion(_) => &[
+                ("Drive", &["drive", "shape"]),
+                ("Tone", &["tone"]),
+                ("Output", &["output", "mix"]),
+            ],
+            EffectKind::Filter(_) => &[
+                ("Filter", &["kind", "cutoff", "resonance"]),
+                ("Follower", &["env_follow"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Eq(_) => &[
+                ("Low", &["low_freq", "low_gain"]),
+                ("Mid", &["mid_freq", "mid_gain", "mid_q"]),
+                ("High", &["high_freq", "high_gain"]),
+            ],
+            EffectKind::Compressor(_) => &[
+                ("Detection", &["threshold", "ratio", "knee"]),
+                ("Timing", &["attack", "release"]),
+                ("Output", &["makeup", "mix"]),
+            ],
+            EffectKind::Limiter(_) => &[("Limiting", &["ceiling", "release"])],
+            EffectKind::Bitcrush(_) => &[("Crush", &["bits", "downsample"]), ("Output", &["mix"])],
+            EffectKind::Phaser(_) => &[
+                ("Motion", &["rate", "depth"]),
+                ("Shape", &["stages", "feedback"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Flanger(_) => &[
+                ("Motion", &["rate", "depth"]),
+                ("Shape", &["feedback"]),
+                ("Output", &["mix"]),
+            ],
+            EffectKind::Gate(_) => &[
+                ("Detection", &["threshold"]),
+                ("Timing", &["attack", "hold", "release"]),
+            ],
+            EffectKind::Stereo(_) => &[("Image", &["width", "bass_mono"])],
+        }
+    }
+
+    /// Starting points worth having to hand.
+    pub fn presets(&self) -> &'static [EffectPreset] {
+        match self {
+            EffectKind::Reverb(_) => &[
+                (
+                    "Room",
+                    &[
+                        ("size", 0.35),
+                        ("damping", 0.5),
+                        ("predelay", 6.0),
+                        ("width", 0.8),
+                        ("mix", 0.18),
+                    ],
+                ),
+                (
+                    "Hall",
+                    &[
+                        ("size", 0.78),
+                        ("damping", 0.35),
+                        ("predelay", 24.0),
+                        ("width", 1.0),
+                        ("mix", 0.3),
+                    ],
+                ),
+                (
+                    "Plate",
+                    &[
+                        ("size", 0.6),
+                        ("damping", 0.15),
+                        ("predelay", 2.0),
+                        ("width", 0.7),
+                        ("mix", 0.26),
+                    ],
+                ),
+                (
+                    "Cathedral",
+                    &[
+                        ("size", 0.95),
+                        ("damping", 0.2),
+                        ("predelay", 45.0),
+                        ("width", 1.0),
+                        ("mix", 0.4),
+                    ],
+                ),
+                (
+                    "Ambience",
+                    &[
+                        ("size", 0.2),
+                        ("damping", 0.6),
+                        ("predelay", 0.0),
+                        ("width", 0.6),
+                        ("mix", 0.12),
+                    ],
+                ),
+            ],
+            EffectKind::Delay(_) => &[
+                (
+                    "Slapback",
+                    &[
+                        ("sync", 0.0),
+                        ("time", 0.09),
+                        ("feedback", 0.12),
+                        ("ping_pong", 0.0),
+                        ("mix", 0.2),
+                    ],
+                ),
+                (
+                    "Eighth",
+                    &[
+                        ("sync", 1.0),
+                        ("time", 0.5),
+                        ("feedback", 0.35),
+                        ("ping_pong", 0.0),
+                        ("mix", 0.22),
+                    ],
+                ),
+                (
+                    "Dotted",
+                    &[
+                        ("sync", 1.0),
+                        ("time", 0.75),
+                        ("feedback", 0.42),
+                        ("ping_pong", 1.0),
+                        ("mix", 0.25),
+                    ],
+                ),
+                (
+                    "Ping-pong",
+                    &[
+                        ("sync", 1.0),
+                        ("time", 0.25),
+                        ("feedback", 0.5),
+                        ("ping_pong", 1.0),
+                        ("mix", 0.3),
+                    ],
+                ),
+                (
+                    "Dub",
+                    &[
+                        ("sync", 1.0),
+                        ("time", 0.375),
+                        ("feedback", 0.75),
+                        ("damping", 2200.0),
+                        ("mix", 0.35),
+                    ],
+                ),
+            ],
+            EffectKind::Chorus(_) => &[
+                (
+                    "Subtle",
+                    &[
+                        ("rate", 0.4),
+                        ("depth", 0.2),
+                        ("voices", 2.0),
+                        ("mix", 0.25),
+                    ],
+                ),
+                (
+                    "Lush",
+                    &[
+                        ("rate", 0.7),
+                        ("depth", 0.5),
+                        ("voices", 4.0),
+                        ("spread", 0.9),
+                        ("mix", 0.45),
+                    ],
+                ),
+                (
+                    "Ensemble",
+                    &[
+                        ("rate", 1.4),
+                        ("depth", 0.65),
+                        ("voices", 6.0),
+                        ("spread", 1.0),
+                        ("mix", 0.5),
+                    ],
+                ),
+            ],
+            EffectKind::Distortion(_) => &[
+                (
+                    "Warm",
+                    &[
+                        ("drive", 0.2),
+                        ("shape", 0.0),
+                        ("tone", 0.5),
+                        ("output", 0.9),
+                        ("mix", 0.7),
+                    ],
+                ),
+                (
+                    "Crunch",
+                    &[
+                        ("drive", 0.5),
+                        ("shape", 0.0),
+                        ("tone", 0.65),
+                        ("output", 0.7),
+                        ("mix", 1.0),
+                    ],
+                ),
+                (
+                    "Fuzz",
+                    &[
+                        ("drive", 0.85),
+                        ("shape", 1.0),
+                        ("tone", 0.55),
+                        ("output", 0.55),
+                        ("mix", 1.0),
+                    ],
+                ),
+                (
+                    "Broken",
+                    &[
+                        ("drive", 0.7),
+                        ("shape", 2.0),
+                        ("tone", 0.4),
+                        ("output", 0.6),
+                        ("mix", 1.0),
+                    ],
+                ),
+            ],
+            EffectKind::Filter(_) => &[
+                (
+                    "Low pass",
+                    &[
+                        ("kind", 0.0),
+                        ("cutoff", 3000.0),
+                        ("resonance", 0.2),
+                        ("mix", 1.0),
+                    ],
+                ),
+                (
+                    "High pass",
+                    &[
+                        ("kind", 1.0),
+                        ("cutoff", 300.0),
+                        ("resonance", 0.15),
+                        ("mix", 1.0),
+                    ],
+                ),
+                (
+                    "Telephone",
+                    &[
+                        ("kind", 2.0),
+                        ("cutoff", 1400.0),
+                        ("resonance", 0.5),
+                        ("mix", 1.0),
+                    ],
+                ),
+                (
+                    "Auto-wah",
+                    &[
+                        ("kind", 2.0),
+                        ("cutoff", 500.0),
+                        ("resonance", 0.6),
+                        ("env_follow", 0.6),
+                        ("mix", 1.0),
+                    ],
+                ),
+            ],
+            EffectKind::Eq(_) => &[
+                (
+                    "Flat",
+                    &[("low_gain", 0.0), ("mid_gain", 0.0), ("high_gain", 0.0)],
+                ),
+                (
+                    "Air",
+                    &[
+                        ("high_freq", 9000.0),
+                        ("high_gain", 4.0),
+                        ("low_gain", -1.0),
+                    ],
+                ),
+                (
+                    "Warmth",
+                    &[("low_freq", 160.0), ("low_gain", 3.5), ("high_gain", -1.5)],
+                ),
+                (
+                    "Scoop",
+                    &[("mid_freq", 900.0), ("mid_gain", -6.0), ("mid_q", 1.2)],
+                ),
+                (
+                    "Presence",
+                    &[("mid_freq", 3000.0), ("mid_gain", 4.0), ("mid_q", 0.8)],
+                ),
+            ],
+            EffectKind::Compressor(_) => &[
+                (
+                    "Gentle",
+                    &[
+                        ("threshold", -14.0),
+                        ("ratio", 2.0),
+                        ("attack", 20.0),
+                        ("release", 180.0),
+                        ("knee", 9.0),
+                    ],
+                ),
+                (
+                    "Drum bus",
+                    &[
+                        ("threshold", -18.0),
+                        ("ratio", 4.0),
+                        ("attack", 6.0),
+                        ("release", 90.0),
+                        ("makeup", 3.0),
+                    ],
+                ),
+                (
+                    "Vocal",
+                    &[
+                        ("threshold", -20.0),
+                        ("ratio", 3.5),
+                        ("attack", 12.0),
+                        ("release", 140.0),
+                        ("makeup", 4.0),
+                    ],
+                ),
+                (
+                    "Pump",
+                    &[
+                        ("threshold", -26.0),
+                        ("ratio", 10.0),
+                        ("attack", 1.0),
+                        ("release", 240.0),
+                        ("makeup", 6.0),
+                    ],
+                ),
+                (
+                    "Parallel",
+                    &[
+                        ("threshold", -30.0),
+                        ("ratio", 12.0),
+                        ("attack", 2.0),
+                        ("release", 120.0),
+                        ("mix", 0.4),
+                    ],
+                ),
+            ],
+            EffectKind::Limiter(_) => &[
+                ("Transparent", &[("ceiling", -0.3), ("release", 120.0)]),
+                ("Loud", &[("ceiling", -0.1), ("release", 40.0)]),
+                ("Safety", &[("ceiling", -1.0), ("release", 200.0)]),
+            ],
+            EffectKind::Bitcrush(_) => &[
+                (
+                    "Lo-fi",
+                    &[("bits", 12.0), ("downsample", 2.0), ("mix", 0.5)],
+                ),
+                ("8-bit", &[("bits", 8.0), ("downsample", 4.0), ("mix", 1.0)]),
+                (
+                    "Destroyed",
+                    &[("bits", 3.0), ("downsample", 16.0), ("mix", 1.0)],
+                ),
+            ],
+            EffectKind::Phaser(_) => &[
+                (
+                    "Slow sweep",
+                    &[
+                        ("rate", 0.15),
+                        ("depth", 0.8),
+                        ("stages", 6.0),
+                        ("feedback", 0.5),
+                        ("mix", 0.5),
+                    ],
+                ),
+                (
+                    "Vintage",
+                    &[
+                        ("rate", 0.5),
+                        ("depth", 0.6),
+                        ("stages", 4.0),
+                        ("feedback", 0.3),
+                        ("mix", 0.45),
+                    ],
+                ),
+                (
+                    "Jet",
+                    &[
+                        ("rate", 1.2),
+                        ("depth", 1.0),
+                        ("stages", 12.0),
+                        ("feedback", 0.8),
+                        ("mix", 0.6),
+                    ],
+                ),
+            ],
+            EffectKind::Flanger(_) => &[
+                (
+                    "Classic",
+                    &[
+                        ("rate", 0.25),
+                        ("depth", 0.6),
+                        ("feedback", 0.5),
+                        ("mix", 0.4),
+                    ],
+                ),
+                (
+                    "Metallic",
+                    &[
+                        ("rate", 0.1),
+                        ("depth", 0.35),
+                        ("feedback", 0.9),
+                        ("mix", 0.5),
+                    ],
+                ),
+                (
+                    "Through zero",
+                    &[
+                        ("rate", 0.4),
+                        ("depth", 0.9),
+                        ("feedback", -0.6),
+                        ("mix", 0.5),
+                    ],
+                ),
+            ],
+            EffectKind::Gate(_) => &[
+                (
+                    "Tight",
+                    &[
+                        ("threshold", -35.0),
+                        ("attack", 0.5),
+                        ("hold", 8.0),
+                        ("release", 40.0),
+                    ],
+                ),
+                (
+                    "Drums",
+                    &[
+                        ("threshold", -28.0),
+                        ("attack", 1.0),
+                        ("hold", 30.0),
+                        ("release", 90.0),
+                    ],
+                ),
+                (
+                    "Noise floor",
+                    &[
+                        ("threshold", -55.0),
+                        ("attack", 3.0),
+                        ("hold", 60.0),
+                        ("release", 300.0),
+                    ],
+                ),
+            ],
+            EffectKind::Stereo(_) => &[
+                ("Mono", &[("width", 0.0), ("bass_mono", 0.0)]),
+                ("Natural", &[("width", 1.0), ("bass_mono", 0.0)]),
+                ("Wide", &[("width", 1.6), ("bass_mono", 0.0)]),
+                ("Mastering", &[("width", 1.25), ("bass_mono", 140.0)]),
+            ],
+        }
+    }
+
+    /// Apply a preset by name. Returns false if this effect has no such preset.
+    pub fn apply_preset(&mut self, name: &str) -> bool {
+        let Some((_, values)) = self.presets().iter().find(|(n, _)| *n == name) else {
+            return false;
+        };
+        for (param, value) in *values {
+            let _ = self.set_param(param, *value);
+        }
+        true
+    }
+}
+
+impl Effect {
+    pub fn description(&self) -> &'static str {
+        self.kind.description()
+    }
+
+    pub fn category(&self) -> EffectCategory {
+        self.kind.category()
+    }
+}
+
+/// Every effect slug, grouped by family, for the "add effect" menu.
+pub fn effects_by_category() -> Vec<(EffectCategory, Vec<&'static str>)> {
+    EffectCategory::ALL
+        .iter()
+        .map(|category| {
+            let slugs = EffectKind::SLUGS
+                .iter()
+                .copied()
+                .filter(|slug| {
+                    EffectKind::from_slug(slug)
+                        .map(|k| k.category() == *category)
+                        .unwrap_or(false)
+                })
+                .collect();
+            (*category, slugs)
+        })
+        .collect()
 }

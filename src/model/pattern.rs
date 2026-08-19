@@ -47,7 +47,13 @@ pub enum Curve {
 }
 
 impl Curve {
-    pub const ALL: [Curve; 5] = [Curve::Linear, Curve::Hold, Curve::Smooth, Curve::EaseIn, Curve::EaseOut];
+    pub const ALL: [Curve; 5] = [
+        Curve::Linear,
+        Curve::Hold,
+        Curve::Smooth,
+        Curve::EaseIn,
+        Curve::EaseOut,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -91,11 +97,22 @@ pub enum AutomationTarget {
     MixerVolume(usize),
     MixerPan(usize),
     /// A named parameter on an effect in a mixer track's chain.
-    MixerEffect { track: usize, slot: usize, param: ParamRef },
+    MixerEffect {
+        track: usize,
+        slot: usize,
+        param: ParamRef,
+    },
     /// A named parameter on an effect in a channel's chain.
-    ChannelEffect { channel: Id, slot: usize, param: ParamRef },
+    ChannelEffect {
+        channel: Id,
+        slot: usize,
+        param: ParamRef,
+    },
     /// A named parameter on a channel's instrument.
-    Instrument { channel: Id, param: ParamRef },
+    Instrument {
+        channel: Id,
+        param: ParamRef,
+    },
 }
 
 /// A parameter name stored as a small fixed buffer so the whole target stays
@@ -112,7 +129,10 @@ impl ParamRef {
         let src = name.as_bytes();
         let len = src.len().min(20);
         bytes[..len].copy_from_slice(&src[..len]);
-        Self { bytes, len: len as u8 }
+        Self {
+            bytes,
+            len: len as u8,
+        }
     }
 
     pub fn as_str(&self) -> &str {
@@ -138,7 +158,11 @@ impl AutomationTarget {
             AutomationTarget::MixerEffect { track, slot, param } => {
                 format!("Insert {track} fx {slot} {param}")
             }
-            AutomationTarget::ChannelEffect { channel, slot, param } => {
+            AutomationTarget::ChannelEffect {
+                channel,
+                slot,
+                param,
+            } => {
                 format!("Channel {channel} fx {slot} {param}")
             }
             AutomationTarget::Instrument { channel, param } => {
@@ -159,9 +183,11 @@ impl AutomationLane {
     pub fn new(target: AutomationTarget) -> Self {
         Self {
             target,
-            points: vec![
-                AutomationPoint { beat: 0.0, value: 0.5, curve: Curve::Linear },
-            ],
+            points: vec![AutomationPoint {
+                beat: 0.0,
+                value: 0.5,
+                curve: Curve::Linear,
+            }],
             enabled: true,
         }
     }
@@ -192,8 +218,11 @@ impl AutomationLane {
     }
 
     pub fn sort(&mut self) {
-        self.points
-            .sort_by(|a, b| a.beat.partial_cmp(&b.beat).unwrap_or(std::cmp::Ordering::Equal));
+        self.points.sort_by(|a, b| {
+            a.beat
+                .partial_cmp(&b.beat)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 }
 
@@ -230,7 +259,11 @@ impl Pattern {
             .notes
             .iter()
             .map(|n| n.end())
-            .chain(self.automation.iter().flat_map(|l| l.points.iter().map(|p| p.beat)))
+            .chain(
+                self.automation
+                    .iter()
+                    .flat_map(|l| l.points.iter().map(|p| p.beat)),
+            )
             .fold(0.0f64, f64::max);
         if content <= 0.0 {
             beats_per_bar

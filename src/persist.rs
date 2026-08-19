@@ -73,8 +73,18 @@ pub fn pattern_to_midi(project: &Project, pattern: &Pattern) -> Vec<u8> {
         let start = (note.start * MIDI_PPQ as f64).round().max(0.0) as u32;
         let end = (note.end() * MIDI_PPQ as f64).round().max(0.0) as u32;
         let velocity = (note.velocity * 127.0).clamp(1.0, 127.0) as u8;
-        events.push(Event { tick: start, status: 0x90 | midi_channel, data1: note.key, data2: velocity });
-        events.push(Event { tick: end.max(start + 1), status: 0x80 | midi_channel, data1: note.key, data2: 0 });
+        events.push(Event {
+            tick: start,
+            status: 0x90 | midi_channel,
+            data1: note.key,
+            data2: velocity,
+        });
+        events.push(Event {
+            tick: end.max(start + 1),
+            status: 0x80 | midi_channel,
+            data1: note.key,
+            data2: 0,
+        });
     }
     // Note-offs sort before note-ons at the same tick so repeats retrigger.
     events.sort_by_key(|e| (e.tick, if e.status & 0xF0 == 0x80 { 0 } else { 1 }));
@@ -124,7 +134,11 @@ pub fn pattern_to_midi(project: &Project, pattern: &Pattern) -> Vec<u8> {
 /// Read a Standard MIDI File into notes, one per MIDI note-on/off pair.
 ///
 /// Returns the notes in beats, along with the tempo if the file declares one.
-pub fn midi_to_notes(bytes: &[u8], channel: Id, next_id: &mut Id) -> anyhow::Result<(Vec<Note>, Option<f64>)> {
+pub fn midi_to_notes(
+    bytes: &[u8],
+    channel: Id,
+    next_id: &mut Id,
+) -> anyhow::Result<(Vec<Note>, Option<f64>)> {
     if bytes.len() < 14 || &bytes[0..4] != b"MThd" {
         anyhow::bail!("not a MIDI file");
     }
@@ -273,6 +287,10 @@ pub fn midi_to_notes(bytes: &[u8], channel: Id, next_id: &mut Id) -> anyhow::Res
         cursor = end;
     }
 
-    notes.sort_by(|a, b| a.start.partial_cmp(&b.start).unwrap_or(std::cmp::Ordering::Equal));
+    notes.sort_by(|a, b| {
+        a.start
+            .partial_cmp(&b.start)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok((notes, tempo))
 }

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>LimeDAW</title>
     <meta name="color-scheme" content="light dark" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii0xIC0xIDIgMiIgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiPgogIDxyZWN0IHg9Ii0xIiB5PSItMSIgd2lkdGg9IjIiIGhlaWdodD0iMiIgZmlsbD0iIzA4MEEwOCIvPgogIDxjaXJjbGUgcj0iMC45NCIgZmlsbD0iIzNENkExNiIvPgogIDxjaXJjbGUgcj0iMC44NiIgZmlsbD0iIzZCQTYxRiIvPgogIDxjaXJjbGUgcj0iMC43OSIgZmlsbD0iI0Q5RURCOCIvPgogIDxjaXJjbGUgcj0iMC43NCIgZmlsbD0iIzdDQjUxOCIvPgogIDxnPjxwYXRoIGQ9Ik0gMCAwIEwgMC43MTkgMC4wMzAgQSAwLjcyIDAuNzIgMCAwIDEgMC41NzAgMC40MzkgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC41MzIgMC40ODUgQSAwLjcyIDAuNzIgMCAwIDEgMC4xNTUgMC43MDMgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC4wOTUgMC43MTQgQSAwLjcyIDAuNzIgMCAwIDEgLTAuMzM0IDAuNjM4IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIC0wLjM4NiAwLjYwOCBBIDAuNzIgMC43MiAwIDAgMSAtMC42NjYgMC4yNzQgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgLTAuNjg2IDAuMjE4IEEgMC43MiAwLjcyIDAgMCAxIC0wLjY4NiAtMC4yMTggWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgLTAuNjY2IC0wLjI3NCBBIDAuNzIgMC43MiAwIDAgMSAtMC4zODYgLTAuNjA4IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIC0wLjMzNCAtMC42MzggQSAwLjcyIDAuNzIgMCAwIDEgMC4wOTUgLTAuNzE0IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIDAuMTU1IC0wLjcwMyBBIDAuNzIgMC43MiAwIDAgMSAwLjUzMiAtMC40ODUgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC41NzAgLTAuNDM5IEEgMC43MiAwLjcyIDAgMCAxIDAuNzE5IC0wLjAzMCBaIiBmaWxsPSIjOUJENjM0Ii8+PC9nPgogIDxjaXJjbGUgcj0iMC4wOCIgZmlsbD0iI0Q5RURCOCIvPgo8L3N2Zz4K" />
     <link data-trunk rel="rust" data-bin="limedaw" data-wasm-opt="0" />
     <style>
       :root {
@@ -50,6 +51,11 @@
       #loading.hidden {
         opacity: 0;
       }
+      #loading .fruit {
+        width: 84px;
+        height: 84px;
+        image-rendering: auto;
+      }
       #loading .mark {
         font-size: 2rem;
         font-weight: 600;
@@ -81,6 +87,7 @@
   </head>
   <body>
     <div id="loading">
+      <img class="fruit" alt="" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9Ii0xIC0xIDIgMiIgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxMjgiPgogIDxyZWN0IHg9Ii0xIiB5PSItMSIgd2lkdGg9IjIiIGhlaWdodD0iMiIgZmlsbD0iIzA4MEEwOCIvPgogIDxjaXJjbGUgcj0iMC45NCIgZmlsbD0iIzNENkExNiIvPgogIDxjaXJjbGUgcj0iMC44NiIgZmlsbD0iIzZCQTYxRiIvPgogIDxjaXJjbGUgcj0iMC43OSIgZmlsbD0iI0Q5RURCOCIvPgogIDxjaXJjbGUgcj0iMC43NCIgZmlsbD0iIzdDQjUxOCIvPgogIDxnPjxwYXRoIGQ9Ik0gMCAwIEwgMC43MTkgMC4wMzAgQSAwLjcyIDAuNzIgMCAwIDEgMC41NzAgMC40MzkgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC41MzIgMC40ODUgQSAwLjcyIDAuNzIgMCAwIDEgMC4xNTUgMC43MDMgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC4wOTUgMC43MTQgQSAwLjcyIDAuNzIgMCAwIDEgLTAuMzM0IDAuNjM4IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIC0wLjM4NiAwLjYwOCBBIDAuNzIgMC43MiAwIDAgMSAtMC42NjYgMC4yNzQgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgLTAuNjg2IDAuMjE4IEEgMC43MiAwLjcyIDAgMCAxIC0wLjY4NiAtMC4yMTggWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgLTAuNjY2IC0wLjI3NCBBIDAuNzIgMC43MiAwIDAgMSAtMC4zODYgLTAuNjA4IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIC0wLjMzNCAtMC42MzggQSAwLjcyIDAuNzIgMCAwIDEgMC4wOTUgLTAuNzE0IFoiIGZpbGw9IiM5QkQ2MzQiLz48cGF0aCBkPSJNIDAgMCBMIDAuMTU1IC0wLjcwMyBBIDAuNzIgMC43MiAwIDAgMSAwLjUzMiAtMC40ODUgWiIgZmlsbD0iIzlCRDYzNCIvPjxwYXRoIGQ9Ik0gMCAwIEwgMC41NzAgLTAuNDM5IEEgMC43MiAwLjcyIDAgMCAxIDAuNzE5IC0wLjAzMCBaIiBmaWxsPSIjOUJENjM0Ii8+PC9nPgogIDxjaXJjbGUgcj0iMC4wOCIgZmlsbD0iI0Q5RURCOCIvPgo8L3N2Zz4K" />
       <div class="mark">LimeDAW</div>
       <div class="note">Loading the workstation…</div>
     </div>

@@ -1,0 +1,249 @@
+name: Build and release
+
+# Every push to main refreshes a rolling `latest-dev` release; a v* tag cuts a
+# permanent one. Both carry the same set of installers and a changelog built
+# from the commits they contain.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # -------------------------------------------------------------------------
+  check:
+    name: Check and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install audio and windowing headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+
+  # -------------------------------------------------------------------------
+  build:
+    name: ${{ matrix.name }}
+    needs: check
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (x86_64)
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+          - name: Linux (ARM64)
+            runner: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+          - name: macOS (Apple silicon)
+            runner: macos-14
+            target: aarch64-apple-darwin
+            platform: macos
+          - name: macOS (Intel)
+            runner: macos-13
+            target: x86_64-apple-darwin
+            platform: macos
+          - name: Windows (x86_64)
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+          - name: Windows (ARM64)
+            runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            platform: windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libudev-dev pkg-config \
+            libgtk-3-dev libxkbcommon-dev libwayland-dev \
+            desktop-file-utils fuse libfuse2
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Regenerate icon assets
+        run: cargo run --release --locked --example generate_icon
+
+      # ---- Linux: AppImage, deb and a tarball ----
+      - name: Package for Linux
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          arch="$(uname -m)"
+          mkdir -p dist target/release
+          cp "target/${{ matrix.target }}/release/limedaw" target/release/limedaw
+
+          # ImageMagick is not present on the runner; convert with Python.
+          python3 -m pip install --quiet pillow
+          python3 - <<'PY'
+          from PIL import Image
+          im = Image.open("assets/limedaw.png")
+          im.resize((256, 256)).save("assets/limedaw.png")
+          PY
+
+          # AppImage
+          appimagetool_url="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${arch}.AppImage"
+          curl -fsSL "$appimagetool_url" -o /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+          export PATH="/tmp:$PATH"
+          ln -sf /tmp/appimagetool /tmp/appimagetool.AppImage
+          APPIMAGE_EXTRACT_AND_RUN=1 PATH="/tmp:$PATH" \
+            bash -c 'appimagetool() { /tmp/appimagetool "$@"; }; export -f appimagetool; packaging/linux/build-appimage.sh' || {
+              echo "appimagetool failed; falling back to a plain tarball" >&2
+            }
+
+          # Debian package
+          cargo install cargo-deb --locked --quiet || true
+          cargo deb --no-build --target ${{ matrix.target }} --output "dist/LimeDAW-${version}-${arch}.deb" || \
+            cargo deb --no-build --output "dist/LimeDAW-${version}-${arch}.deb"
+
+          # Portable tarball
+          staging="target/tarball/LimeDAW-${version}"
+          mkdir -p "$staging"
+          cp target/release/limedaw "$staging/"
+          cp README.md LICENSE "$staging/"
+          cp assets/limedaw.desktop assets/limedaw.svg assets/limedaw.png "$staging/"
+          tar -czf "dist/LimeDAW-${version}-linux-${arch}.tar.gz" -C target/tarball "LimeDAW-${version}"
+          ls -la dist/
+
+      # ---- macOS: a signed-ad-hoc .app inside a .dmg ----
+      - name: Package for macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          set -euo pipefail
+          packaging/macos/build-dmg.sh "${{ matrix.target }}"
+          ls -la dist/
+
+      # ---- Windows: MSI and a portable zip ----
+      - name: Install WiX
+        if: matrix.platform == 'windows'
+        run: dotnet tool install --global wix --version 5.*
+
+      - name: Package for Windows
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          wix extension add -g WixToolset.UI.wixext
+          packaging\windows\build-msi.ps1 -Target ${{ matrix.target }}
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: limedaw-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # -------------------------------------------------------------------------
+  release:
+    name: Publish
+    needs: build
+    if: github.event_name == 'push' && github.repository == 'JamesClarke7283/LimeDAW'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect the installers
+        run: |
+          mkdir -p dist
+          find artifacts -type f -exec cp {} dist/ \;
+          ls -la dist/
+
+      - name: Write the changelog
+        id: changelog
+        run: |
+          chmod +x packaging/changelog.sh
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            packaging/changelog.sh "${{ github.ref_name }}" > CHANGELOG_RELEASE.md
+          else
+            # A development build lists everything since the last release.
+            previous="$(git describe --tags --abbrev=0 2>/dev/null || true)"
+            {
+              echo "Built from \`${GITHUB_SHA::7}\` on $(date -u '+%Y-%m-%d %H:%M UTC')."
+              echo
+              echo "> This is a rolling development build. It is replaced by the next"
+              echo "> commit to \`main\`; use a versioned release if you want something stable."
+              echo
+              if [ -n "$previous" ]; then
+                packaging/changelog.sh HEAD
+              else
+                echo "### Changes"
+                echo
+                git log --no-merges --pretty=format:'- %s (%h)' | head -50
+              fi
+            } > CHANGELOG_RELEASE.md
+          fi
+          cat CHANGELOG_RELEASE.md
+
+      - name: Move the latest-dev tag
+        if: startsWith(github.ref, 'refs/heads/')
+        run: |
+          git tag -f latest-dev
+          git push -f origin latest-dev
+
+      - name: Publish the development build
+        if: startsWith(github.ref, 'refs/heads/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-dev
+          name: Development build
+          body_path: CHANGELOG_RELEASE.md
+          prerelease: true
+          files: dist/*
+          fail_on_unmatched_files: false
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: LimeDAW ${{ github.ref_name }}
+          body_path: CHANGELOG_RELEASE.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: dist/*
+          fail_on_unmatched_files: true

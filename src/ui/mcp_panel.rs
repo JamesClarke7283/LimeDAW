@@ -46,10 +46,21 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
                 }),
             text(status_text).size(12),
             iced::widget::space::horizontal(),
-            button(text(if running { "Stop server" } else { "Start server" }).size(12))
-                .padding([5, 10])
-                .style(if running { theme::button_danger } else { theme::button_accent })
-                .on_press(Message::ToggleMcpServer),
+            button(
+                text(if running {
+                    "Stop server"
+                } else {
+                    "Start server"
+                })
+                .size(12)
+            )
+            .padding([5, 10])
+            .style(if running {
+                theme::button_danger
+            } else {
+                theme::button_accent
+            })
+            .on_press(Message::ToggleMcpServer),
         ]
         .spacing(10)
         .align_y(Alignment::Center),
@@ -62,9 +73,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let tool_list = column(tools.iter().map(|tool| {
         row![
             container(text(tool.name).size(11)).width(Length::Fixed(190.0)),
-            text(tool.description).size(11).style(|theme: &iced::Theme| text::Style {
-                color: Some(theme::palette(theme).text_dim)
-            }),
+            text(tool.description)
+                .size(11)
+                .style(|theme: &iced::Theme| text::Style {
+                    color: Some(theme::palette(theme).text_dim)
+                }),
         ]
         .spacing(8)
         .into()
@@ -128,17 +141,17 @@ fn config_box<'a>(title: &'a str, description: &'a str, content: String) -> Elem
             .spacing(10)
             .align_y(Alignment::Center),
             container(
-                scrollable(
-                    text(content)
-                        .size(11)
-                        .font(iced::Font::MONOSPACE)
-                )
-                .direction(iced::widget::scrollable::Direction::Both {
-                    vertical: iced::widget::scrollable::Scrollbar::new().width(5).scroller_width(5),
-                    horizontal: iced::widget::scrollable::Scrollbar::new().width(5).scroller_width(5),
-                })
-                .style(theme::scroll)
-                .height(Length::Shrink)
+                scrollable(text(content).size(11).font(iced::Font::MONOSPACE))
+                    .direction(iced::widget::scrollable::Direction::Both {
+                        vertical: iced::widget::scrollable::Scrollbar::new()
+                            .width(5)
+                            .scroller_width(5),
+                        horizontal: iced::widget::scrollable::Scrollbar::new()
+                            .width(5)
+                            .scroller_width(5),
+                    })
+                    .style(theme::scroll)
+                    .height(Length::Shrink)
             )
             .padding(10)
             .width(Length::Fill)

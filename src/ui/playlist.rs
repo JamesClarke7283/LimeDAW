@@ -39,20 +39,39 @@ impl Default for State {
 #[derive(Debug, Clone)]
 pub enum Action {
     Seek(f64),
-    Scroll { beats: f64, track: f32 },
+    Scroll {
+        beats: f64,
+        track: f32,
+    },
     Zoom(f32),
     Checkpoint,
-    AddClip { track: usize, start: f64 },
-    SetClip { id: Id, track: usize, start: f64 },
-    SetClipLength { id: Id, length: f64 },
+    AddClip {
+        track: usize,
+        start: f64,
+    },
+    SetClip {
+        id: Id,
+        track: usize,
+        start: f64,
+    },
+    SetClipLength {
+        id: Id,
+        length: f64,
+    },
     Delete(Id),
     Select(Vec<Id>),
     /// Start dragging a clip: checkpoint, select it, and follow its pattern.
-    BeginClipDrag { clip: Id, pattern: Option<Id> },
+    BeginClipDrag {
+        clip: Id,
+        pattern: Option<Id>,
+    },
     SelectPattern(Id),
     ToggleTrackMute(usize),
     ToggleTrackSolo(usize),
-    SetLoop { start: f64, end: f64 },
+    SetLoop {
+        start: f64,
+        end: f64,
+    },
     ClearLoop,
 }
 
@@ -118,7 +137,11 @@ impl PlaylistCanvas<'_> {
     }
 
     fn snap_beat(&self, beat: f64) -> f64 {
-        let snap = if self.snap <= 0.0 { 1.0 } else { self.snap.max(0.25) };
+        let snap = if self.snap <= 0.0 {
+            1.0
+        } else {
+            self.snap.max(0.25)
+        };
         ((beat / snap).round() * snap).max(0.0)
     }
 
@@ -256,12 +279,17 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                 let point = cursor.position_in(bounds)?;
                 match interaction {
                     Interaction::Idle => None,
-                    Interaction::Panning { origin, scroll, track } => {
+                    Interaction::Panning {
+                        origin,
+                        scroll,
+                        track,
+                    } => {
                         let beats = (*scroll
                             - ((point.x - origin.x) / self.state.pixels_per_beat.max(0.5)) as f64)
                             .max(0.0);
                         let max_track = self.playlist.tracks.len().saturating_sub(1) as f32;
-                        let t = (*track - (point.y - origin.y) / TRACK_HEIGHT).clamp(0.0, max_track);
+                        let t =
+                            (*track - (point.y - origin.y) / TRACK_HEIGHT).clamp(0.0, max_track);
                         Some(
                             canvas::Action::publish(Action::Scroll { beats, track: t })
                                 .and_capture(),
@@ -284,7 +312,12 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                             .and_capture(),
                         )
                     }
-                    Interaction::Moving { id, anchor, origin_start, origin_track } => {
+                    Interaction::Moving {
+                        id,
+                        anchor,
+                        origin_start,
+                        origin_track,
+                    } => {
                         let beat_delta =
                             ((point.x - anchor.x) / self.state.pixels_per_beat.max(0.5)) as f64;
                         let start = self.snap_beat(*origin_start + beat_delta);
@@ -293,14 +326,26 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                             .clamp(0, self.playlist.tracks.len() as isize - 1)
                             as usize;
                         Some(
-                            canvas::Action::publish(Action::SetClip { id: *id, track, start })
-                                .and_capture(),
+                            canvas::Action::publish(Action::SetClip {
+                                id: *id,
+                                track,
+                                start,
+                            })
+                            .and_capture(),
                         )
                     }
-                    Interaction::Resizing { id, anchor_x, origin_length } => {
+                    Interaction::Resizing {
+                        id,
+                        anchor_x,
+                        origin_length,
+                    } => {
                         let delta =
                             ((point.x - *anchor_x) / self.state.pixels_per_beat.max(0.5)) as f64;
-                        let snap = if self.snap <= 0.0 { 1.0 } else { self.snap.max(0.25) };
+                        let snap = if self.snap <= 0.0 {
+                            1.0
+                        } else {
+                            self.snap.max(0.25)
+                        };
                         let length = (((*origin_length + delta) / snap).round() * snap).max(snap);
                         Some(
                             canvas::Action::publish(Action::SetClipLength { id: *id, length })
@@ -411,7 +456,11 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
             let selected = self.state.selection.contains(&clip.id);
             let left = x.max(HEADER_WIDTH);
             let draw_width = (x + width - left).max(3.0);
-            let fill = if clip.muted { theme::alpha(colour, 0.3) } else { colour };
+            let fill = if clip.muted {
+                theme::alpha(colour, 0.3)
+            } else {
+                colour
+            };
 
             frame.fill_rectangle(
                 Point::new(left, y + 3.0),
@@ -422,7 +471,11 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                 Point::new(left, y + 3.0),
                 Size::new(draw_width, TRACK_HEIGHT - 7.0),
                 Stroke::default()
-                    .with_color(if selected { p.accent } else { theme::darken(fill, 0.35) })
+                    .with_color(if selected {
+                        p.accent
+                    } else {
+                        theme::darken(fill, 0.35)
+                    })
                     .with_width(if selected { 2.0 } else { 1.0 }),
             );
             // Repeat markers show where the pattern loops inside a long clip.
@@ -496,7 +549,11 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
                 frame.fill_text(ui::canvas_text(
                     label,
                     Point::new(x + 6.0, y + 12.0),
-                    if on { theme::contrasting_text(tint) } else { p.text_dim },
+                    if on {
+                        theme::contrasting_text(tint)
+                    } else {
+                        p.text_dim
+                    },
                     9.0,
                 ));
             };
@@ -515,7 +572,11 @@ impl canvas::Program<Action> for PlaylistCanvas<'_> {
         );
 
         // Ruler.
-        frame.fill_rectangle(Point::ORIGIN, Size::new(size.width, RULER_HEIGHT), p.surface_high);
+        frame.fill_rectangle(
+            Point::ORIGIN,
+            Size::new(size.width, RULER_HEIGHT),
+            p.surface_high,
+        );
         let visible = ((size.width - HEADER_WIDTH) / self.state.pixels_per_beat.max(0.5)) as f64;
         let first_bar = (self.state.scroll_beats / self.beats_per_bar).floor() as i64;
         let last_bar = ((self.state.scroll_beats + visible) / self.beats_per_bar).ceil() as i64;
@@ -618,7 +679,9 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         snap: app.settings.grid_snap.max(0.25),
     };
 
-    let canvas = Canvas::new(program).width(Length::Fill).height(Length::Fill);
+    let canvas = Canvas::new(program)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     column![
         toolbar(app),
@@ -633,7 +696,10 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
 fn toolbar(app: &LimeDaw) -> Element<'_, Message> {
     let patterns = row(app.project.patterns.iter().map(|pattern| {
-        let active = app.playlist.paint_pattern.unwrap_or(app.selected_pattern.unwrap_or(0))
+        let active = app
+            .playlist
+            .paint_pattern
+            .unwrap_or(app.selected_pattern.unwrap_or(0))
             == pattern.id;
         let id = pattern.id;
         button(text(pattern.name.clone()).size(11))
@@ -670,7 +736,9 @@ fn toolbar(app: &LimeDaw) -> Element<'_, Message> {
             ui::caption("Paint"),
             iced::widget::scrollable(patterns)
                 .direction(iced::widget::scrollable::Direction::Horizontal(
-                    iced::widget::scrollable::Scrollbar::new().width(4).scroller_width(4)
+                    iced::widget::scrollable::Scrollbar::new()
+                        .width(4)
+                        .scroller_width(4)
                 ))
                 .style(theme::scroll),
             iced::widget::space::horizontal(),

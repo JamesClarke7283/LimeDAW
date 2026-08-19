@@ -15,12 +15,10 @@ pub fn view<'a>(
     error: Option<&'a str>,
 ) -> Element<'a, Message> {
     let discovered: Element<'_, Message> = if found.is_empty() {
-        container(
-            ui::caption(format!(
-                "No SoundFonts found. Put a .sf2 file in {} and it will appear here.",
-                crate::paths::display(&crate::paths::soundfonts_dir())
-            ))
-        )
+        container(ui::caption(format!(
+            "No SoundFonts found. Put a .sf2 file in {} and it will appear here.",
+            crate::paths::display(&crate::paths::soundfonts_dir())
+        )))
         .padding(10)
         .into()
     } else {
@@ -31,20 +29,22 @@ pub fn view<'a>(
                 .unwrap_or_default();
             let subtitle = crate::paths::display(path);
             let path = path.clone();
-            button(
-                column![text(label).size(13), ui::caption(subtitle)].spacing(1),
-            )
-            .padding([7, 10])
-            .width(Length::Fill)
-            .style(theme::button_plain)
-            .on_press(Message::ChooseSoundFontPath(path))
-            .into()
+            button(column![text(label).size(13), ui::caption(subtitle)].spacing(1))
+                .padding([7, 10])
+                .width(Length::Fill)
+                .style(theme::button_plain)
+                .on_press(Message::ChooseSoundFontPath(path))
+                .into()
         }))
         .spacing(4);
-        container(scrollable(items).style(theme::scroll).height(Length::Fixed(210.0)))
-            .padding(6)
-            .style(theme::well)
-            .into()
+        container(
+            scrollable(items)
+                .style(theme::scroll)
+                .height(Length::Fixed(210.0)),
+        )
+        .padding(6)
+        .style(theme::well)
+        .into()
     };
 
     let error_notice: Element<'_, Message> = match error {

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=LimeDAW
+GenericName=Digital Audio Workstation
+Comment=Write, arrange and mix music
+Exec=limedaw %f
+Icon=limedaw
+Terminal=false
+Categories=AudioVideo;Audio;Sequencer;Music;
+MimeType=application/x-limedaw-project;
+Keywords=daw;music;audio;sequencer;synth;midi;
+StartupNotify=true
+StartupWMClass=limedaw

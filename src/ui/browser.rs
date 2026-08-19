@@ -11,13 +11,15 @@ use crate::ui;
 pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let tabs = row(BrowserTab::ALL.map(|tab| {
         let active = app.browser_tab == tab;
-        button(text(tab.label()).size(11))
-            .padding([4, 7])
+        button(text(tab.label()).size(11).center())
+            .padding([4, 6])
+            .width(Length::Fill)
             .style(move |theme: &Theme, s| theme::button_tab(theme, s, active))
             .on_press(Message::SetBrowserTab(tab))
             .into()
     }))
-    .spacing(2);
+    .spacing(2)
+    .wrap();
 
     let body = match app.browser_tab {
         BrowserTab::Instruments => instruments(),
@@ -35,7 +37,7 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         ]
         .spacing(2),
     )
-    .width(Length::Fixed(216.0))
+    .width(Length::Fixed(212.0))
     .height(Length::Fill)
     .style(theme::panel)
     .into()
@@ -81,8 +83,14 @@ fn instruments<'a>() -> Element<'a, Message> {
         section(
             "Other",
             vec![
-                entry("Sampler".into(), Message::AddChannel(NewChannelKind::EmptySampler)),
-                entry("SoundFont".into(), Message::AddChannel(NewChannelKind::SoundFont)),
+                entry(
+                    "Sampler".into(),
+                    Message::AddChannel(NewChannelKind::EmptySampler)
+                ),
+                entry(
+                    "SoundFont".into(),
+                    Message::AddChannel(NewChannelKind::SoundFont)
+                ),
             ]
         ),
     ]
@@ -113,7 +121,11 @@ fn presets(app: &LimeDaw) -> Element<'_, Message> {
                 .padding([3, 6])
                 .width(Length::Fill)
                 .style(theme::button_ghost)
-                .on_press(Message::AddSoundFontChannel { bank, program, name })
+                .on_press(Message::AddSoundFontChannel {
+                    bank,
+                    program,
+                    name,
+                })
                 .into()
         })
         .collect();
@@ -122,7 +134,12 @@ fn presets(app: &LimeDaw) -> Element<'_, Message> {
 
 fn samples(app: &LimeDaw) -> Element<'_, Message> {
     let built_in: Vec<Element<'_, Message>> = DrumModel::ALL
-        .map(|model| entry(model.label().to_string(), Message::AddChannel(NewChannelKind::Drum(model))))
+        .map(|model| {
+            entry(
+                model.label().to_string(),
+                Message::AddChannel(NewChannelKind::Drum(model)),
+            )
+        })
         .into_iter()
         .collect();
 
@@ -142,7 +159,7 @@ fn samples(app: &LimeDaw) -> Element<'_, Message> {
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 // A dot marks samples already decoded into the engine's bank.
-                let loaded = app.bank.contains(&path.to_string_lossy().to_string());
+                let loaded = app.bank.contains(path.to_string_lossy().as_ref());
                 let label = if loaded { format!("• {name}") } else { name };
                 let path = path.clone();
                 button(text(label).size(11))
@@ -155,9 +172,12 @@ fn samples(app: &LimeDaw) -> Element<'_, Message> {
             .collect()
     };
 
-    column![section("Built-in drums", built_in), section("Sample folder", file_items)]
-        .spacing(12)
-        .into()
+    column![
+        section("Built-in drums", built_in),
+        section("Sample folder", file_items)
+    ]
+    .spacing(12)
+    .into()
 }
 
 fn projects(app: &LimeDaw) -> Element<'_, Message> {

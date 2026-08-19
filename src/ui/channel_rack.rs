@@ -20,7 +20,12 @@ const RULER_HEIGHT: f32 = 18.0;
 pub enum Action {
     /// Paint a step. `first` marks the start of a drag, which is where the
     /// undo checkpoint belongs — the rest of the drag is one edit.
-    Paint { channel: Id, step: usize, on: bool, first: bool },
+    Paint {
+        channel: Id,
+        step: usize,
+        on: bool,
+        first: bool,
+    },
     Seek(f64),
     SelectChannel(Id),
     Preview(Id),
@@ -69,7 +74,11 @@ impl StepGrid {
     }
 
     fn step_on(&self, row: usize, step: usize) -> Option<f32> {
-        self.cells.get(row).and_then(|r| r.get(step)).copied().flatten()
+        self.cells
+            .get(row)
+            .and_then(|r| r.get(step))
+            .copied()
+            .flatten()
     }
 }
 
@@ -101,7 +110,10 @@ impl canvas::Program<Action> for StepGrid {
                 let (channel, _, _) = self.channels[row];
                 let currently_on = self.step_on(row, step).is_some();
                 let turning_on = matches!(button, mouse::Button::Left) && !currently_on;
-                *interaction = Interaction::Painting { on: turning_on, last: (row, step) };
+                *interaction = Interaction::Painting {
+                    on: turning_on,
+                    last: (row, step),
+                };
                 Some(
                     canvas::Action::publish(Action::Paint {
                         channel,
@@ -178,11 +190,7 @@ impl canvas::Program<Action> for StepGrid {
         for step in 0..self.steps {
             let x = step as f32 * STEP_WIDTH;
             if step % steps_per_bar == 0 {
-                frame.fill_rectangle(
-                    Point::new(x, 0.0),
-                    Size::new(1.0, RULER_HEIGHT),
-                    p.grid_bar,
-                );
+                frame.fill_rectangle(Point::new(x, 0.0), Size::new(1.0, RULER_HEIGHT), p.grid_bar);
                 frame.fill_text(ui::canvas_text(
                     format!("{}", step / steps_per_bar + 1),
                     Point::new(x + 3.0, 3.0),
@@ -206,7 +214,7 @@ impl canvas::Program<Action> for StepGrid {
             }
             for step in 0..self.steps {
                 let x = step as f32 * STEP_WIDTH;
-                let beat_group = (step / (steps_per_bar / 4).max(1)) % 2 == 0;
+                let beat_group = (step / (steps_per_bar / 4).max(1)).is_multiple_of(2);
                 let cell = Rectangle {
                     x: x + 2.0,
                     y: y + 3.0,
@@ -219,9 +227,7 @@ impl canvas::Program<Action> for StepGrid {
                     p.surface_low
                 };
                 let hovered = hover
-                    .map(|h| {
-                        h.x >= x && h.x < x + STEP_WIDTH && h.y >= y && h.y < y + ROW_HEIGHT
-                    })
+                    .map(|h| h.x >= x && h.x < x + STEP_WIDTH && h.y >= y && h.y < y + ROW_HEIGHT)
                     .unwrap_or(false);
                 let fill = match self.step_on(row, step) {
                     Some(velocity) => {
@@ -237,11 +243,7 @@ impl canvas::Program<Action> for StepGrid {
                     fill,
                 );
                 if step % steps_per_bar == 0 {
-                    frame.fill_rectangle(
-                        Point::new(x, y),
-                        Size::new(1.0, ROW_HEIGHT),
-                        p.grid_bar,
-                    );
+                    frame.fill_rectangle(Point::new(x, y), Size::new(1.0, ROW_HEIGHT), p.grid_bar);
                 }
             }
         }
@@ -281,7 +283,12 @@ impl canvas::Program<Action> for StepGrid {
 }
 
 /// Build the per-cell velocity grid the canvas draws from.
-fn build_cells(pattern: &Pattern, channels: &[(Id, Color, bool)], steps: usize, step_beats: f64) -> Vec<Vec<Option<f32>>> {
+fn build_cells(
+    pattern: &Pattern,
+    channels: &[(Id, Color, bool)],
+    steps: usize,
+    step_beats: f64,
+) -> Vec<Vec<Option<f32>>> {
     let mut cells = vec![vec![None; steps]; channels.len()];
     for note in &pattern.notes {
         let Some(row) = channels.iter().position(|(id, _, _)| *id == note.channel) else {
@@ -318,8 +325,21 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     };
 
     let step_beats = 0.25;
-    let length = pattern.length_beats(app.project.beats_per_bar());
-    let steps = ((length / step_beats).ceil() as usize).clamp(16, 256);
+    let beats_per_bar = app.project.beats_per_bar();
+    let steps_per_bar = (beats_per_bar / step_beats).round().max(1.0) as usize;
+
+    // The grid runs on past whatever has been written: four spare bars beyond
+    // the last note, so there is always somewhere to keep going.
+    let content_beats = pattern
+        .notes
+        .iter()
+        .map(|n| n.end())
+        .fold(0.0f64, f64::max)
+        .max(pattern.length_override.unwrap_or(0.0));
+    let content_steps = (content_beats / step_beats).ceil() as usize;
+    let steps = (content_steps + steps_per_bar * 4)
+        .next_multiple_of(steps_per_bar)
+        .max(steps_per_bar * 4);
 
     let channels: Vec<(Id, Color, bool)> = app
         .project
@@ -340,7 +360,9 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
     let grid_canvas = Canvas::new(grid)
         .width(Length::Fixed(steps as f32 * STEP_WIDTH))
-        .height(Length::Fixed(RULER_HEIGHT + channels.len() as f32 * ROW_HEIGHT));
+        .height(Length::Fixed(
+            RULER_HEIGHT + channels.len() as f32 * ROW_HEIGHT,
+        ));
 
     let strips = column(
         std::iter::once(
@@ -348,7 +370,12 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
                 .height(Length::Fixed(RULER_HEIGHT))
                 .into(),
         )
-        .chain(app.project.channels.iter().map(|c| channel_strip(app, c.id))),
+        .chain(
+            app.project
+                .channels
+                .iter()
+                .map(|c| channel_strip(app, c.id)),
+        ),
     )
     .spacing(0)
     .width(Length::Fixed(268.0));
@@ -382,7 +409,10 @@ fn channel_strip(app: &LimeDaw, id: Id) -> Element<'_, Message> {
         .height(Length::Fixed(ROW_HEIGHT - 8.0))
         .style(move |_: &Theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(colour)),
-            border: iced::Border { radius: iced::border::radius(2), ..Default::default() },
+            border: iced::Border {
+                radius: iced::border::radius(2),
+                ..Default::default()
+            },
             ..Default::default()
         });
 
@@ -431,7 +461,11 @@ fn channel_strip(app: &LimeDaw, id: Id) -> Element<'_, Message> {
     container(content)
         .height(Length::Fixed(ROW_HEIGHT))
         .padding([0, 4])
-        .style(if selected { theme::selected } else { theme::transparent })
+        .style(if selected {
+            theme::selected
+        } else {
+            theme::transparent
+        })
         .into()
 }
 
@@ -456,7 +490,9 @@ fn rack_toolbar(app: &LimeDaw) -> Element<'_, Message> {
         button(text("+ Synth").size(11))
             .padding([4, 8])
             .style(theme::button_plain)
-            .on_press(Message::AddChannel(NewChannelKind::Synth(SynthPreset::Default))),
+            .on_press(Message::AddChannel(NewChannelKind::Synth(
+                SynthPreset::Default
+            ))),
         button(text("+ Drum").size(11))
             .padding([4, 8])
             .style(theme::button_plain)
@@ -550,7 +586,6 @@ fn rack_toolbar(app: &LimeDaw) -> Element<'_, Message> {
     container(
         column![
             row![
-                ui::caption("Pattern"),
                 rename,
                 scrollable(patterns)
                     .direction(scrollable::Direction::Horizontal(
@@ -562,9 +597,14 @@ fn rack_toolbar(app: &LimeDaw) -> Element<'_, Message> {
             ]
             .spacing(8)
             .align_y(Alignment::Center),
-            row![add_menu, iced::widget::space::horizontal(), midi, channel_actions]
-                .spacing(8)
-                .align_y(Alignment::Center),
+            row![
+                add_menu,
+                iced::widget::space::horizontal(),
+                midi,
+                channel_actions
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center),
         ]
         .spacing(5),
     )

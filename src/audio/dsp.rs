@@ -17,7 +17,11 @@ pub fn db_to_gain(db: f32) -> f32 {
 
 #[inline]
 pub fn gain_to_db(gain: f32) -> f32 {
-    if gain <= 1e-9 { -180.0 } else { 20.0 * gain.log10() }
+    if gain <= 1e-9 {
+        -180.0
+    } else {
+        20.0 * gain.log10()
+    }
 }
 
 /// Equal-power pan. `pan` is -1..1; returns (left, right) gains.
@@ -39,6 +43,9 @@ impl Default for Noise {
     }
 }
 
+// `next` reads naturally for a sample generator, and these are hot
+// enough that wrapping them in `Iterator` is not worth the indirection.
+#[allow(clippy::should_implement_trait)]
 impl Noise {
     pub fn with_seed(seed: u32) -> Self {
         Self { state: seed | 1 }
@@ -84,13 +91,24 @@ pub struct Osc {
 
 impl Default for Osc {
     fn default() -> Self {
-        Self { phase: 0.0, noise: Noise::default(), tri_state: 0.0 }
+        Self {
+            phase: 0.0,
+            noise: Noise::default(),
+            tri_state: 0.0,
+        }
     }
 }
 
+// `next` reads naturally for a sample generator, and these are hot
+// enough that wrapping them in `Iterator` is not worth the indirection.
+#[allow(clippy::should_implement_trait)]
 impl Osc {
     pub fn with_seed(seed: u32) -> Self {
-        Self { phase: 0.0, noise: Noise::with_seed(seed), tri_state: 0.0 }
+        Self {
+            phase: 0.0,
+            noise: Noise::with_seed(seed),
+            tri_state: 0.0,
+        }
     }
 
     pub fn reset(&mut self, phase: f32) {
@@ -154,7 +172,14 @@ impl Svf {
     }
 
     #[inline]
-    pub fn process(&mut self, input: f32, kind: FilterKind, cutoff: f32, resonance: f32, sr: f32) -> f32 {
+    pub fn process(
+        &mut self,
+        input: f32,
+        kind: FilterKind,
+        cutoff: f32,
+        resonance: f32,
+        sr: f32,
+    ) -> f32 {
         if matches!(kind, FilterKind::Off) {
             return input;
         }
@@ -180,7 +205,12 @@ impl Svf {
             FilterKind::Notch => input - k * v1,
             FilterKind::Off => input,
         };
-        if out.is_finite() { out } else { self.reset(); 0.0 }
+        if out.is_finite() {
+            out
+        } else {
+            self.reset();
+            0.0
+        }
     }
 }
 
@@ -220,9 +250,16 @@ pub struct Smoothed {
     coeff: f32,
 }
 
+// `next` reads naturally for a sample generator, and these are hot enough that
+// wrapping them in `Iterator` is not worth the indirection.
+#[allow(clippy::should_implement_trait)]
 impl Smoothed {
     pub fn new(value: f32) -> Self {
-        Self { current: value, target: value, coeff: 0.002 }
+        Self {
+            current: value,
+            target: value,
+            coeff: 0.002,
+        }
     }
 
     pub fn set_time(&mut self, seconds: f32, sr: f32) {
@@ -286,6 +323,9 @@ impl Default for Adsr {
     }
 }
 
+// `next` reads naturally for a sample generator, and these are hot
+// enough that wrapping them in `Iterator` is not worth the indirection.
+#[allow(clippy::should_implement_trait)]
 impl Adsr {
     pub fn configure(&mut self, env: &crate::model::Envelope, sr: f32) {
         self.attack_rate = 1.0 / (env.attack.max(0.0005) * sr);
@@ -370,7 +410,10 @@ pub struct DelayLine {
 
 impl DelayLine {
     pub fn new(max_samples: usize) -> Self {
-        Self { buffer: vec![0.0; max_samples.max(2)], write: 0 }
+        Self {
+            buffer: vec![0.0; max_samples.max(2)],
+            write: 0,
+        }
     }
 
     pub fn clear(&mut self) {
@@ -431,7 +474,11 @@ pub struct AllPassDelay {
 
 impl AllPassDelay {
     pub fn new(len: usize, feedback: f32) -> Self {
-        Self { buffer: vec![0.0; len.max(1)], index: 0, feedback }
+        Self {
+            buffer: vec![0.0; len.max(1)],
+            index: 0,
+            feedback,
+        }
     }
 
     #[inline]
@@ -458,7 +505,11 @@ pub struct Comb {
 
 impl Comb {
     pub fn new(len: usize) -> Self {
-        Self { buffer: vec![0.0; len.max(1)], index: 0, filter_store: 0.0 }
+        Self {
+            buffer: vec![0.0; len.max(1)],
+            index: 0,
+            filter_store: 0.0,
+        }
     }
 
     #[inline]
@@ -550,7 +601,9 @@ impl Biquad {
 
     #[inline]
     pub fn process(&mut self, x: f32) -> f32 {
-        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2 - self.a1 * self.y1 - self.a2 * self.y2;
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
         let y = if y.is_finite() { y } else { 0.0 };
         self.x2 = self.x1;
         self.x1 = x;

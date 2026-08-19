@@ -13,7 +13,7 @@ path = "src/main.rs"
 [lib]
 name = "limedaw"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
 
 [dependencies]
 iced = { version = "0.14", default-features = false, features = [
@@ -50,6 +50,36 @@ web-sys = { version = "0.3", features = [
     "AudioDestinationNode", "ScriptProcessorNode", "AudioProcessingEvent",
     "AudioContextState", "Performance",
 ] }
+
+# ---------------------------------------------------------------------------
+# Packaging
+# ---------------------------------------------------------------------------
+
+[package.metadata.deb]
+maintainer = "James David Clarke <james@jamesdavidclarke.com>"
+copyright = "2026, LimeDAW contributors"
+license-file = ["LICENSE", "0"]
+extended-description = """\
+A pattern-based digital audio workstation: channel rack, piano roll, playlist \
+and mixer, with a built-in synthesiser, sampler and SoundFont playback, and an \
+MCP server for driving the application programmatically."""
+section = "sound"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/limedaw", "usr/bin/", "755"],
+    ["assets/limedaw.desktop", "usr/share/applications/limedaw.desktop", "644"],
+    ["assets/limedaw.svg", "usr/share/icons/hicolor/scalable/apps/limedaw.svg", "644"],
+    ["assets/limedaw.png", "usr/share/icons/hicolor/256x256/apps/limedaw.png", "644"],
+    ["README.md", "usr/share/doc/limedaw/README.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/limedaw", dest = "/usr/bin/limedaw", mode = "755" },
+    { source = "assets/limedaw.desktop", dest = "/usr/share/applications/limedaw.desktop", mode = "644" },
+    { source = "assets/limedaw.svg", dest = "/usr/share/icons/hicolor/scalable/apps/limedaw.svg", mode = "644" },
+]
 
 [profile.release]
 opt-level = 3

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::app::{FxHost, LimeDaw, MainView, NewChannelKind, SynthPreset};
 use crate::audio::EngineCmd;
 use crate::audio::schedule::PlayMode;
-use crate::model::*;
+use crate::model::{ParamKind, *};
 use crate::theme::ThemeChoice;
 
 /// Small helpers for reading arguments without a mountain of match arms.
@@ -116,13 +116,11 @@ impl LimeDaw {
         match tool {
             // ---- session ------------------------------------------------
             "get_state" => Ok(self.state_summary()),
-            "get_project" => {
-                serde_json::to_value(&self.project).map_err(|e| e.to_string())
-            }
+            "get_project" => serde_json::to_value(&self.project).map_err(|e| e.to_string()),
             "set_project" => {
                 let raw = args.get("project").ok_or_else(|| missing("project"))?;
-                let project: Project =
-                    serde_json::from_value(raw.clone()).map_err(|e| format!("invalid project: {e}"))?;
+                let project: Project = serde_json::from_value(raw.clone())
+                    .map_err(|e| format!("invalid project: {e}"))?;
                 self.checkpoint();
                 self.load_project(project, self.project_path.clone());
                 self.dirty = true;
@@ -131,7 +129,11 @@ impl LimeDaw {
             "new_project" => {
                 self.checkpoint();
                 let empty = args.bool_of("empty").unwrap_or(false);
-                let mut project = if empty { Project::empty() } else { Project::starter() };
+                let mut project = if empty {
+                    Project::empty()
+                } else {
+                    Project::starter()
+                };
                 if let Some(name) = args.str_of("name") {
                     project.name = name;
                 }
@@ -148,7 +150,9 @@ impl LimeDaw {
                         })
                     })
                     .collect();
-                Ok(json!({ "directory": crate::paths::projects_dir().to_string_lossy(), "projects": projects }))
+                Ok(
+                    json!({ "directory": crate::paths::projects_dir().to_string_lossy(), "projects": projects }),
+                )
             }
             "open_project" => {
                 let raw = args.str_of("path").ok_or_else(|| missing("path"))?;
@@ -159,7 +163,8 @@ impl LimeDaw {
                     .map_err(|e| format!("could not parse {}: {e}", path.display()))?;
                 self.checkpoint();
                 self.load_project(project, Some(path.clone()));
-                self.settings.remember_project(&path.to_string_lossy().to_string());
+                self.settings
+                    .remember_project(path.to_string_lossy().as_ref());
                 let _ = self.settings.save();
                 Ok(json!({ "ok": true, "path": path.to_string_lossy(), "name": self.project.name }))
             }
@@ -167,8 +172,10 @@ impl LimeDaw {
                 let path = match args.str_of("path") {
                     Some(raw) => resolve_project_path(&raw),
                     None => self.project_path.clone().unwrap_or_else(|| {
-                        crate::paths::projects_dir()
-                            .join(format!("{}.lime", crate::actions::safe_name(&self.project.name)))
+                        crate::paths::projects_dir().join(format!(
+                            "{}.lime",
+                            crate::actions::safe_name(&self.project.name)
+                        ))
                     }),
                 };
                 self.project.sanitise();
@@ -181,7 +188,8 @@ impl LimeDaw {
                     .map_err(|e| format!("could not write {}: {e}", path.display()))?;
                 self.project_path = Some(path.clone());
                 self.dirty = false;
-                self.settings.remember_project(&path.to_string_lossy().to_string());
+                self.settings
+                    .remember_project(path.to_string_lossy().as_ref());
                 let _ = self.settings.save();
                 Ok(json!({ "ok": true, "path": path.to_string_lossy() }))
             }
@@ -217,9 +225,16 @@ impl LimeDaw {
                 Ok(json!({ "tempo": self.project.tempo }))
             }
             "set_time_signature" => {
-                let numerator = args.u32_of("numerator").ok_or_else(|| missing("numerator"))?;
-                let denominator = args.u32_of("denominator").ok_or_else(|| missing("denominator"))?;
-                self.project.time_signature = TimeSignature { numerator, denominator };
+                let numerator = args
+                    .u32_of("numerator")
+                    .ok_or_else(|| missing("numerator"))?;
+                let denominator = args
+                    .u32_of("denominator")
+                    .ok_or_else(|| missing("denominator"))?;
+                self.project.time_signature = TimeSignature {
+                    numerator,
+                    denominator,
+                };
                 self.project.sanitise();
                 self.touch();
                 Ok(json!({
@@ -343,7 +358,11 @@ impl LimeDaw {
                     return Err(format!("no channel with id {id}"));
                 }
                 // Nothing will send a matching note-off, so give it a deadline.
-                self.engine.send(EngineCmd::NoteOn { channel: id, key, velocity });
+                self.engine.send(EngineCmd::NoteOn {
+                    channel: id,
+                    key,
+                    velocity,
+                });
                 self.hold_preview(id, key);
                 Ok(json!({ "channel": id, "key": key }))
             }
@@ -367,12 +386,14 @@ impl LimeDaw {
             "add_pattern" => {
                 self.checkpoint();
                 let n = self.project.patterns.len() + 1;
-                let name = args.str_of("name").unwrap_or_else(|| format!("Pattern {n}"));
+                let name = args
+                    .str_of("name")
+                    .unwrap_or_else(|| format!("Pattern {n}"));
                 let id = self.project.add_pattern(name.clone());
-                if let Some(length) = args.f64_of("length_beats") {
-                    if let Some(pattern) = self.project.pattern_mut(id) {
-                        pattern.length_override = Some(length.max(0.25));
-                    }
+                if let Some(length) = args.f64_of("length_beats")
+                    && let Some(pattern) = self.project.pattern_mut(id)
+                {
+                    pattern.length_override = Some(length.max(0.25));
                 }
                 self.selected_pattern = Some(id);
                 if matches!(self.play_mode, PlayMode::Pattern(_)) {
@@ -523,7 +544,10 @@ impl LimeDaw {
                     return Err(format!("no note with id {note_id}"));
                 }
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 let note = pattern.note_mut(note_id).ok_or("no such note")?;
                 if let Some(key) = args.u32_of("key") {
                     note.key = key.min(127) as u8;
@@ -556,7 +580,10 @@ impl LimeDaw {
                 let pattern_id = self.pattern_arg(args)?;
                 let note_id = args.u32_of("note").ok_or_else(|| missing("note"))?;
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 let before = pattern.notes.len();
                 pattern.remove_note(note_id);
                 if pattern.notes.len() == before {
@@ -568,10 +595,15 @@ impl LimeDaw {
             "set_steps" => self.set_steps_tool(args),
             "transpose_notes" => {
                 let pattern_id = self.pattern_arg(args)?;
-                let semitones = args.f64_of("semitones").ok_or_else(|| missing("semitones"))? as i32;
+                let semitones = args
+                    .f64_of("semitones")
+                    .ok_or_else(|| missing("semitones"))? as i32;
                 let channel = args.u32_of("channel");
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 let mut moved = 0;
                 for note in &mut pattern.notes {
                     if channel.map(|c| note.channel == c).unwrap_or(true) {
@@ -584,11 +616,17 @@ impl LimeDaw {
             }
             "quantize_notes" => {
                 let pattern_id = self.pattern_arg(args)?;
-                let grid = args.f64_of("grid").ok_or_else(|| missing("grid"))?.max(1.0 / 64.0);
+                let grid = args
+                    .f64_of("grid")
+                    .ok_or_else(|| missing("grid"))?
+                    .max(1.0 / 64.0);
                 let strength = args.f64_of("strength").unwrap_or(1.0).clamp(0.0, 1.0);
                 let channel = args.u32_of("channel");
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 let mut moved = 0;
                 for note in &mut pattern.notes {
                     if channel.map(|c| note.channel == c).unwrap_or(true) {
@@ -606,7 +644,10 @@ impl LimeDaw {
                 let velocity = args.f32_of("velocity").unwrap_or(0.1).clamp(0.0, 1.0);
                 let channel = args.u32_of("channel");
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 let mut touched = 0;
                 for (index, note) in pattern.notes.iter_mut().enumerate() {
                     if !channel.map(|c| note.channel == c).unwrap_or(true) {
@@ -644,7 +685,10 @@ impl LimeDaw {
             "add_clip" => {
                 let pattern = args.u32_of("pattern").ok_or_else(|| missing("pattern"))?;
                 let track = args.usize_of("track").ok_or_else(|| missing("track"))?;
-                let start = args.f64_of("start").ok_or_else(|| missing("start"))?.max(0.0);
+                let start = args
+                    .f64_of("start")
+                    .ok_or_else(|| missing("start"))?
+                    .max(0.0);
                 if self.project.pattern(pattern).is_none() {
                     return Err(format!("no pattern with id {pattern}"));
                 }
@@ -759,8 +803,9 @@ impl LimeDaw {
             }
             "add_effect" => {
                 let slug = args.str_of("kind").ok_or_else(|| missing("kind"))?;
-                let effect = Effect::from_slug(&slug)
-                    .ok_or_else(|| format!("unknown effect: {slug}. Try one of {:?}", EffectKind::SLUGS))?;
+                let effect = Effect::from_slug(&slug).ok_or_else(|| {
+                    format!("unknown effect: {slug}. Try one of {:?}", EffectKind::SLUGS)
+                })?;
                 let host = self.fx_host(args)?;
                 self.checkpoint();
                 let position = args.usize_of("position");
@@ -838,9 +883,214 @@ impl LimeDaw {
                 self.touch();
                 Ok(json!({ "ok": true, "slot": slot }))
             }
+            "move_effect" => {
+                let slot = args.usize_of("slot").ok_or_else(|| missing("slot"))?;
+                let to = args.usize_of("to").ok_or_else(|| missing("to"))?;
+                let host = self.fx_host(args)?;
+                let len = self.effect_chain(host).map(Vec::len).unwrap_or(0);
+                if slot >= len {
+                    return Err(format!("no effect in slot {slot}"));
+                }
+                if to >= len {
+                    return Err(format!("slot {to} is past the end of the chain"));
+                }
+                self.checkpoint();
+                if let Some(chain) = self.effect_chain_mut(host) {
+                    let effect = chain.remove(slot);
+                    chain.insert(to, effect);
+                }
+                self.touch();
+                Ok(json!({ "ok": true, "from": slot, "to": to }))
+            }
+            "apply_effect_preset" => {
+                let slot = args.usize_of("slot").ok_or_else(|| missing("slot"))?;
+                let preset = args.str_of("preset").ok_or_else(|| missing("preset"))?;
+                let host = self.fx_host(args)?;
+                if self.effect_chain(host).and_then(|c| c.get(slot)).is_none() {
+                    return Err(format!("no effect in slot {slot}"));
+                }
+                self.checkpoint();
+                let applied = self
+                    .effect_chain_mut(host)
+                    .and_then(|c| c.get_mut(slot))
+                    .map(|e| e.kind.apply_preset(&preset))
+                    .unwrap_or(false);
+                if !applied {
+                    let available: Vec<&str> = self
+                        .effect_chain(host)
+                        .and_then(|c| c.get(slot))
+                        .map(|e| e.kind.presets().iter().map(|(n, _)| *n).collect())
+                        .unwrap_or_default();
+                    return Err(format!(
+                        "no preset called {preset}. Available: {}",
+                        available.join(", ")
+                    ));
+                }
+                self.touch();
+                Ok(self.effect_json(host, slot))
+            }
+            "set_effect_params" => {
+                let slot = args.usize_of("slot").ok_or_else(|| missing("slot"))?;
+                let host = self.fx_host(args)?;
+                if self.effect_chain(host).and_then(|c| c.get(slot)).is_none() {
+                    return Err(format!("no effect in slot {slot}"));
+                }
+                // Resolve every name before touching anything, so one typo does
+                // not leave the effect half set.
+                let mut resolved: Vec<(String, f32)> = Vec::new();
+                let ranges: Vec<(String, f32, f32)> = self
+                    .effect_chain(host)
+                    .and_then(|c| c.get(slot))
+                    .map(|e| {
+                        e.kind
+                            .params()
+                            .into_iter()
+                            .map(|(n, _, lo, hi)| (n.to_string(), lo, hi))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                if let Some(Value::Object(direct)) = args.get("params") {
+                    for (name, value) in direct {
+                        let value = value
+                            .as_f64()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| format!("{name} needs a finite number"))?;
+                        if !ranges.iter().any(|(n, _, _)| n == name) {
+                            return Err(format!("unknown parameter: {name}"));
+                        }
+                        resolved.push((name.clone(), value as f32));
+                    }
+                }
+                if let Some(Value::Object(normalised)) = args.get("normalised") {
+                    for (name, value) in normalised {
+                        let t = value
+                            .as_f64()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| format!("{name} needs a finite number"))?
+                            as f32;
+                        let (_, lo, hi) = ranges
+                            .iter()
+                            .find(|(n, _, _)| n == name)
+                            .ok_or_else(|| format!("unknown parameter: {name}"))?;
+                        resolved.push((name.clone(), lo + (hi - lo) * t.clamp(0.0, 1.0)));
+                    }
+                }
+
+                self.checkpoint();
+                if let Some(effect) = self.effect_chain_mut(host).and_then(|c| c.get_mut(slot)) {
+                    if let Some(enabled) = args.bool_of("enabled") {
+                        effect.enabled = enabled;
+                    }
+                    for (name, value) in &resolved {
+                        let _ = effect.kind.set_param(name, *value);
+                    }
+                }
+                self.touch();
+                Ok(self.effect_json(host, slot))
+            }
+            "clear_effects" => {
+                let host = self.fx_host(args)?;
+                self.checkpoint();
+                let removed = match self.effect_chain_mut(host) {
+                    Some(chain) => {
+                        let n = chain.len();
+                        chain.clear();
+                        n
+                    }
+                    None => 0,
+                };
+                self.selected_effect = None;
+                self.touch();
+                Ok(json!({ "removed": removed }))
+            }
+            "copy_effects" => {
+                let source = match (args.u32_of("from_channel"), args.usize_of("from_track")) {
+                    (Some(channel), _) => {
+                        if self.project.channel(channel).is_none() {
+                            return Err(format!("no channel with id {channel}"));
+                        }
+                        FxHost::Channel(channel)
+                    }
+                    (None, Some(track)) => {
+                        if track >= self.project.mixer.tracks.len() {
+                            return Err(format!("no mixer track {track}"));
+                        }
+                        FxHost::MixerTrack(track)
+                    }
+                    (None, None) => return Err(missing("from_track or from_channel")),
+                };
+                let destination = match (args.u32_of("to_channel"), args.usize_of("to_track")) {
+                    (Some(channel), _) => {
+                        if self.project.channel(channel).is_none() {
+                            return Err(format!("no channel with id {channel}"));
+                        }
+                        FxHost::Channel(channel)
+                    }
+                    (None, Some(track)) => {
+                        if track >= self.project.mixer.tracks.len() {
+                            return Err(format!("no mixer track {track}"));
+                        }
+                        FxHost::MixerTrack(track)
+                    }
+                    (None, None) => return Err(missing("to_track or to_channel")),
+                };
+                let effects = self.effect_chain(source).cloned().unwrap_or_default();
+                self.checkpoint();
+                if let Some(chain) = self.effect_chain_mut(destination) {
+                    if !args.bool_of("append").unwrap_or(false) {
+                        chain.clear();
+                    }
+                    chain.extend(effects.iter().copied());
+                }
+                self.touch();
+                Ok(json!({ "copied": effects.len() }))
+            }
+            "list_effect_kinds" => {
+                let only = args.str_of("kind");
+                let kinds: Vec<Value> = EffectKind::SLUGS
+                    .iter()
+                    .filter(|slug| only.as_deref().map(|k| k == **slug).unwrap_or(true))
+                    .filter_map(|slug| {
+                        let kind = EffectKind::from_slug(slug)?;
+                        Some(json!({
+                            "kind": slug,
+                            "name": kind.name(),
+                            "category": kind.category().label(),
+                            "description": kind.description(),
+                            "params": kind.params().iter().map(|(name, value, min, max)| json!({
+                                "name": name,
+                                "default": value,
+                                "min": min,
+                                "max": max,
+                                "control": match kind.param_kind(name) {
+                                    ParamKind::Toggle => "toggle",
+                                    ParamKind::Stepped => "stepped",
+                                    ParamKind::Choice(_) => "choice",
+                                    ParamKind::Continuous => "continuous",
+                                },
+                                "choices": match kind.param_kind(name) {
+                                    ParamKind::Choice(options) => Some(options.to_vec()),
+                                    _ => None,
+                                },
+                            })).collect::<Vec<_>>(),
+                            "presets": kind.presets().iter().map(|(n, _)| *n).collect::<Vec<_>>(),
+                        }))
+                    })
+                    .collect();
+                if kinds.is_empty() {
+                    return Err(format!(
+                        "unknown effect. Available: {}",
+                        EffectKind::SLUGS.join(", ")
+                    ));
+                }
+                Ok(json!({ "effects": kinds }))
+            }
             "set_send" => {
                 let from = args.usize_of("track").ok_or_else(|| missing("track"))?;
-                let to = args.usize_of("destination").ok_or_else(|| missing("destination"))?;
+                let to = args
+                    .usize_of("destination")
+                    .ok_or_else(|| missing("destination"))?;
                 let amount = args.f32_of("amount").ok_or_else(|| missing("amount"))?;
                 let count = self.project.mixer.tracks.len();
                 if from >= count || to >= count {
@@ -857,6 +1107,209 @@ impl LimeDaw {
                 }
                 self.touch();
                 Ok(json!({ "ok": true, "from": from, "to": to, "amount": amount }))
+            }
+
+            "set_instrument_params" => {
+                let id = args.u32_of("channel").ok_or_else(|| missing("channel"))?;
+                let channel = self.project.channel(id).ok_or("no such channel")?;
+                let ranges: Vec<(String, f32, f32)> = channel
+                    .instrument
+                    .params()
+                    .into_iter()
+                    .map(|p| (p.name.to_string(), p.min, p.max))
+                    .collect();
+
+                let mut resolved: Vec<(String, f32)> = Vec::new();
+                if let Some(Value::Object(direct)) = args.get("params") {
+                    for (name, value) in direct {
+                        let value = value
+                            .as_f64()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| format!("{name} needs a finite number"))?;
+                        if !ranges.iter().any(|(n, _, _)| n == name) {
+                            return Err(format!("unknown parameter: {name}"));
+                        }
+                        resolved.push((name.clone(), value as f32));
+                    }
+                }
+                if let Some(Value::Object(normalised)) = args.get("normalised") {
+                    for (name, value) in normalised {
+                        let t = value
+                            .as_f64()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| format!("{name} needs a finite number"))?
+                            as f32;
+                        let (_, lo, hi) = ranges
+                            .iter()
+                            .find(|(n, _, _)| n == name)
+                            .ok_or_else(|| format!("unknown parameter: {name}"))?;
+                        resolved.push((name.clone(), lo + (hi - lo) * t.clamp(0.0, 1.0)));
+                    }
+                }
+
+                self.checkpoint();
+                if let Some(channel) = self.project.channel_mut(id) {
+                    for (name, value) in &resolved {
+                        let _ = channel.instrument.set_param(name, *value);
+                    }
+                }
+                self.touch();
+                Ok(json!({ "channel": id, "set": resolved.len() }))
+            }
+            "clone_channel" => {
+                let id = args.u32_of("channel").ok_or_else(|| missing("channel"))?;
+                let source = self.project.channel(id).cloned().ok_or("no such channel")?;
+                self.checkpoint();
+                let new_id = self.project.next_id();
+                let mut clone = source.clone();
+                clone.id = new_id;
+                clone.name = args
+                    .str_of("name")
+                    .unwrap_or_else(|| format!("{} copy", source.name));
+                let index = self.project.channel_index(id).unwrap_or(0);
+                self.project.channels.insert(index + 1, clone);
+
+                if args.bool_of("with_notes").unwrap_or(false) {
+                    let patterns: Vec<Id> = self.project.patterns.iter().map(|p| p.id).collect();
+                    for pattern_id in patterns {
+                        let copies: Vec<Note> = self
+                            .project
+                            .pattern(pattern_id)
+                            .map(|p| p.channel_notes(id).copied().collect())
+                            .unwrap_or_default();
+                        let mut renumbered = Vec::with_capacity(copies.len());
+                        for mut note in copies {
+                            note.id = self.project.next_id();
+                            note.channel = new_id;
+                            renumbered.push(note);
+                        }
+                        if let Some(pattern) = self.project.pattern_mut(pattern_id) {
+                            pattern.notes.extend(renumbered);
+                        }
+                    }
+                }
+                self.selected_channel = Some(new_id);
+                self.touch();
+                let summary = self
+                    .project
+                    .channel(new_id)
+                    .map(|c| self.channel_json(c))
+                    .unwrap_or(json!({ "id": new_id }));
+                Ok(summary)
+            }
+            "move_channel" => {
+                let id = args.u32_of("channel").ok_or_else(|| missing("channel"))?;
+                let to = args.usize_of("to").ok_or_else(|| missing("to"))?;
+                let from = self
+                    .project
+                    .channel_index(id)
+                    .ok_or_else(|| format!("no channel with id {id}"))?;
+                let to = to.min(self.project.channels.len().saturating_sub(1));
+                self.checkpoint();
+                let channel = self.project.channels.remove(from);
+                self.project.channels.insert(to, channel);
+                self.touch();
+                Ok(json!({ "channel": id, "from": from, "to": to }))
+            }
+            "clone_pattern" => {
+                let id = self.pattern_arg(args)?;
+                let source = self.project.pattern(id).cloned().ok_or("no such pattern")?;
+                self.checkpoint();
+                let new_id = self.project.next_id();
+                let mut clone = source.clone();
+                clone.id = new_id;
+                clone.name = args
+                    .str_of("name")
+                    .unwrap_or_else(|| format!("{} copy", source.name));
+                for note in &mut clone.notes {
+                    note.id = self.project.next_id();
+                }
+                self.project.patterns.push(clone);
+                self.selected_pattern = Some(new_id);
+                self.touch();
+                Ok(json!({ "id": new_id, "notes": source.notes.len() }))
+            }
+            "copy_notes" => {
+                let from_pattern = self.pattern_arg(args)?;
+                let to_pattern = match args.u32_of("to_pattern") {
+                    Some(id) if self.project.pattern(id).is_some() => id,
+                    Some(id) => return Err(format!("no pattern with id {id}")),
+                    None => from_pattern,
+                };
+                let channel = args.u32_of("channel").ok_or_else(|| missing("channel"))?;
+                if self.project.channel(channel).is_none() {
+                    return Err(format!("no channel with id {channel}"));
+                }
+                let to_channel = match args.u32_of("to_channel") {
+                    Some(id) if self.project.channel(id).is_some() => id,
+                    Some(id) => return Err(format!("no channel with id {id}")),
+                    None => channel,
+                };
+                let offset = args.f64_of("offset").unwrap_or(0.0);
+                let semitones = args.f64_of("semitones").unwrap_or(0.0) as i32;
+                let scale = args.f32_of("velocity_scale").unwrap_or(1.0).clamp(0.0, 4.0);
+
+                let source: Vec<Note> = self
+                    .project
+                    .pattern(from_pattern)
+                    .map(|p| p.channel_notes(channel).copied().collect())
+                    .unwrap_or_default();
+                if source.is_empty() {
+                    return Err("that channel has no notes in the source pattern".into());
+                }
+                self.checkpoint();
+                let mut copies = Vec::with_capacity(source.len());
+                for mut note in source {
+                    note.id = self.project.next_id();
+                    note.channel = to_channel;
+                    note.start = (note.start + offset).max(0.0);
+                    note.key = (note.key as i32 + semitones).clamp(0, 127) as u8;
+                    note.velocity = (note.velocity * scale).clamp(0.0, 1.0);
+                    copies.push(note);
+                }
+                let count = copies.len();
+                if let Some(pattern) = self.project.pattern_mut(to_pattern) {
+                    pattern.notes.extend(copies);
+                }
+                self.touch();
+                Ok(json!({ "copied": count, "to_pattern": to_pattern, "to_channel": to_channel }))
+            }
+            "set_grid" => {
+                let beats = args.f64_of("beats").ok_or_else(|| missing("beats"))?;
+                self.settings.grid_snap = if beats <= 0.0 {
+                    0.0
+                } else {
+                    beats.clamp(1.0 / 64.0, 8.0)
+                };
+                let _ = self.settings.save();
+                Ok(json!({ "grid": self.settings.grid_snap }))
+            }
+            "set_recording" => {
+                let enabled = args.bool_of("enabled").ok_or_else(|| missing("enabled"))?;
+                self.recording = enabled;
+                if !enabled {
+                    self.release_all_previews();
+                }
+                Ok(json!({ "recording": enabled }))
+            }
+            "get_meters" => {
+                let status = self.engine.status();
+                Ok(json!({
+                    "voices": status.voices(),
+                    "cpu_load": status.cpu_load(),
+                    "sample_rate": status.sample_rate(),
+                    "playing": status.playing(),
+                    "tracks": self.project.mixer.tracks.iter().enumerate().map(|(i, t)| {
+                        let (left, right) = status.meter(i);
+                        json!({
+                            "index": i,
+                            "name": t.name,
+                            "peak_left": left,
+                            "peak_right": right,
+                            "peak_db": crate::audio::dsp::gain_to_db(left.max(right)),
+                        })
+                    }).collect::<Vec<_>>(),
+                }))
             }
 
             // ---- automation -------------------------------------------------
@@ -879,7 +1332,10 @@ impl LimeDaw {
             "clear_automation" => {
                 let pattern_id = self.pattern_arg(args)?;
                 self.checkpoint();
-                let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+                let pattern = self
+                    .project
+                    .pattern_mut(pattern_id)
+                    .ok_or("no such pattern")?;
                 if args.bool_of("all").unwrap_or(false) {
                     let count = pattern.automation.len();
                     pattern.automation.clear();
@@ -930,7 +1386,11 @@ impl LimeDaw {
                     let path = match args.str_of("path") {
                         Some(raw) => {
                             let p = PathBuf::from(&raw);
-                            if p.is_absolute() { p } else { crate::paths::renders_dir().join(raw) }
+                            if p.is_absolute() {
+                                p
+                            } else {
+                                crate::paths::renders_dir().join(raw)
+                            }
                         }
                         None => crate::paths::renders_dir()
                             .join(format!("{}.mid", crate::actions::safe_name(&pattern.name))),
@@ -973,11 +1433,11 @@ impl LimeDaw {
                     let (notes, tempo) = crate::persist::midi_to_notes(&bytes, channel, &mut next)
                         .map_err(|e| e.to_string())?;
                     self.checkpoint();
-                    if args.bool_of("use_tempo").unwrap_or(true) {
-                        if let Some(tempo) = tempo {
-                            self.project.tempo = tempo.clamp(20.0, 999.0);
-                            self.tempo_text = format!("{:.2}", self.project.tempo);
-                        }
+                    if args.bool_of("use_tempo").unwrap_or(true)
+                        && let Some(tempo) = tempo
+                    {
+                        self.project.tempo = tempo.clamp(20.0, 999.0);
+                        self.tempo_text = format!("{:.2}", self.project.tempo);
                     }
                     let replace = args.bool_of("replace").unwrap_or(false);
                     let count = notes.len();
@@ -1024,7 +1484,8 @@ impl LimeDaw {
             }
             "set_view" => {
                 let view = args.str_of("view").ok_or_else(|| missing("view"))?;
-                let target = MainView::from_slug(&view).ok_or_else(|| format!("unknown view: {view}"))?;
+                let target =
+                    MainView::from_slug(&view).ok_or_else(|| format!("unknown view: {view}"))?;
                 self.view = target;
                 Ok(json!({ "view": view }))
             }
@@ -1086,8 +1547,14 @@ impl LimeDaw {
             return Err(format!("no channel with id {channel}"));
         }
         let key = args.u32_of("key").ok_or_else(|| missing("key"))?.min(127) as u8;
-        let start = args.f64_of("start").ok_or_else(|| missing("start"))?.max(0.0);
-        let length = args.f64_of("length").unwrap_or(0.25).clamp(1.0 / 64.0, 512.0);
+        let start = args
+            .f64_of("start")
+            .ok_or_else(|| missing("start"))?
+            .max(0.0);
+        let length = args
+            .f64_of("length")
+            .unwrap_or(0.25)
+            .clamp(1.0 / 64.0, 512.0);
         let velocity = args.f32_of("velocity").unwrap_or(0.78).clamp(0.0, 1.0);
         let pan = args.f32_of("pan").unwrap_or(0.0).clamp(-1.0, 1.0);
         let fine_tune = args.f32_of("fine_tune").unwrap_or(0.0).clamp(-100.0, 100.0);
@@ -1101,6 +1568,22 @@ impl LimeDaw {
             pan,
             fine_tune,
             release: 0.0,
+        })
+    }
+
+    /// One effect, described the way `list_effects` describes it.
+    fn effect_json(&self, host: FxHost, slot: usize) -> Value {
+        let Some(effect) = self.effect_chain(host).and_then(|c| c.get(slot)) else {
+            return json!({ "slot": slot });
+        };
+        json!({
+            "slot": slot,
+            "kind": effect.kind.slug(),
+            "name": effect.name(),
+            "enabled": effect.enabled,
+            "params": effect.kind.params().iter().map(|(name, value, min, max)| json!({
+                "name": name, "value": value, "min": min, "max": max,
+            })).collect::<Vec<_>>(),
         })
     }
 
@@ -1181,9 +1664,11 @@ impl LimeDaw {
         self.checkpoint();
         let new_kind = match kind.as_str() {
             "sampler" => {
-                let drum = args
-                    .str_of("drum")
-                    .and_then(|name| DrumModel::ALL.into_iter().find(|m| m.label().eq_ignore_ascii_case(&name)));
+                let drum = args.str_of("drum").and_then(|name| {
+                    DrumModel::ALL
+                        .into_iter()
+                        .find(|m| m.label().eq_ignore_ascii_case(&name))
+                });
                 match drum {
                     Some(model) => NewChannelKind::Drum(model),
                     None => NewChannelKind::EmptySampler,
@@ -1196,10 +1681,10 @@ impl LimeDaw {
         };
         let id = self.add_channel_of(new_kind);
 
-        if let Some(name) = args.str_of("name") {
-            if let Some(channel) = self.project.channel_mut(id) {
-                channel.name = name;
-            }
+        if let Some(name) = args.str_of("name")
+            && let Some(channel) = self.project.channel_mut(id)
+        {
+            channel.name = name;
         }
         if kind == "soundfont" {
             let bank = args.u32_of("bank").unwrap_or(0) as u16;
@@ -1278,16 +1763,20 @@ impl LimeDaw {
 
     fn set_instrument_tool(&mut self, args: &Value) -> Result<Value, String> {
         let id = args.u32_of("channel").ok_or_else(|| missing("channel"))?;
-        let kind = args.str_of("instrument").ok_or_else(|| missing("instrument"))?;
+        let kind = args
+            .str_of("instrument")
+            .ok_or_else(|| missing("instrument"))?;
         if self.project.channel(id).is_none() {
             return Err(format!("no channel with id {id}"));
         }
         self.checkpoint();
         let instrument = match kind.as_str() {
             "sampler" => {
-                let drum = args
-                    .str_of("drum")
-                    .and_then(|name| DrumModel::ALL.into_iter().find(|m| m.label().eq_ignore_ascii_case(&name)));
+                let drum = args.str_of("drum").and_then(|name| {
+                    DrumModel::ALL
+                        .into_iter()
+                        .find(|m| m.label().eq_ignore_ascii_case(&name))
+                });
                 match drum {
                     Some(model) => Instrument::Sampler(SamplerPatch::from_model(model)),
                     None => Instrument::Sampler(SamplerPatch::default()),
@@ -1322,20 +1811,23 @@ impl LimeDaw {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let resolved = resolve_sample_path(path);
-            if !self.bank.contains(&resolved.to_string_lossy().to_string()) {
+            if !self.bank.contains(resolved.to_string_lossy().as_ref()) {
                 let sample = crate::audio::samples::load_wav(&resolved)
                     .map_err(|e| format!("could not load {}: {e}", resolved.display()))?;
-                self.bank
-                    .insert(resolved.to_string_lossy().to_string(), std::sync::Arc::new(sample));
+                self.bank.insert(
+                    resolved.to_string_lossy().to_string(),
+                    std::sync::Arc::new(sample),
+                );
             }
             let key = resolved.to_string_lossy().to_string();
             if let Some(c) = self.project.channel_mut(channel) {
                 match &mut c.instrument {
                     Instrument::Sampler(p) => p.source = SampleSource::File { path: key },
                     other => {
-                        let mut patch = SamplerPatch::default();
-                        patch.source = SampleSource::File { path: key };
-                        *other = Instrument::Sampler(patch);
+                        *other = Instrument::Sampler(SamplerPatch {
+                            source: SampleSource::File { path: key },
+                            ..SamplerPatch::default()
+                        });
                     }
                 }
             }
@@ -1377,10 +1869,17 @@ impl LimeDaw {
         };
 
         self.checkpoint();
-        let key = self.project.channel(channel).map(|c| c.step_key).unwrap_or(60);
+        let key = self
+            .project
+            .channel(channel)
+            .map(|c| c.step_key)
+            .unwrap_or(60);
         let mut ids = Vec::new();
         {
-            let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+            let pattern = self
+                .project
+                .pattern_mut(pattern_id)
+                .ok_or("no such pattern")?;
             if replace {
                 pattern.notes.retain(|n| n.channel != channel);
             }
@@ -1427,15 +1926,24 @@ impl LimeDaw {
         let replace = args.bool_of("replace").unwrap_or(false);
 
         self.checkpoint();
-        let pattern = self.project.pattern_mut(pattern_id).ok_or("no such pattern")?;
+        let pattern = self
+            .project
+            .pattern_mut(pattern_id)
+            .ok_or("no such pattern")?;
         let lane = pattern.lane_mut(target);
         if replace {
             lane.points.clear();
         }
         let mut added = 0;
         for point in &points {
-            let beat = point.f64_of("beat").ok_or_else(|| missing("beat"))?.max(0.0);
-            let value = point.f64_of("value").ok_or_else(|| missing("value"))?.clamp(0.0, 1.0);
+            let beat = point
+                .f64_of("beat")
+                .ok_or_else(|| missing("beat"))?
+                .max(0.0);
+            let value = point
+                .f64_of("value")
+                .ok_or_else(|| missing("value"))?
+                .clamp(0.0, 1.0);
             let curve = curve_from(&point.str_of("curve").unwrap_or_default());
             lane.points.push(AutomationPoint { beat, value, curve });
             added += 1;
@@ -1470,7 +1978,9 @@ impl LimeDaw {
             "mixer_volume" => {
                 AutomationTarget::MixerVolume(track.ok_or_else(|| missing("target.track"))?)
             }
-            "mixer_pan" => AutomationTarget::MixerPan(track.ok_or_else(|| missing("target.track"))?),
+            "mixer_pan" => {
+                AutomationTarget::MixerPan(track.ok_or_else(|| missing("target.track"))?)
+            }
             "mixer_effect" => AutomationTarget::MixerEffect {
                 track: track.ok_or_else(|| missing("target.track"))?,
                 slot: slot.ok_or_else(|| missing("target.slot"))?,
@@ -1500,10 +2010,10 @@ impl LimeDaw {
             }
             AutomationTarget::MixerVolume(t)
             | AutomationTarget::MixerPan(t)
-            | AutomationTarget::MixerEffect { track: t, .. } => {
-                if t >= self.project.mixer.tracks.len() {
-                    return Err(format!("no mixer track {t}"));
-                }
+            | AutomationTarget::MixerEffect { track: t, .. }
+                if t >= self.project.mixer.tracks.len() =>
+            {
+                return Err(format!("no mixer track {t}"));
             }
             _ => {}
         }
@@ -1518,9 +2028,14 @@ impl LimeDaw {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let mode = match args.str_of("mode").unwrap_or_else(|| "song".into()).as_str() {
+            let mode = match args
+                .str_of("mode")
+                .unwrap_or_else(|| "song".into())
+                .as_str()
+            {
                 "pattern" => PlayMode::Pattern(
-                    self.selected_pattern_id().ok_or("there is no pattern to render")?,
+                    self.selected_pattern_id()
+                        .ok_or("there is no pattern to render")?,
                 ),
                 _ => PlayMode::Song,
             };
@@ -1528,10 +2043,16 @@ impl LimeDaw {
             let path = match args.str_of("path") {
                 Some(raw) => {
                     let p = PathBuf::from(&raw);
-                    if p.is_absolute() { p } else { crate::paths::renders_dir().join(raw) }
+                    if p.is_absolute() {
+                        p
+                    } else {
+                        crate::paths::renders_dir().join(raw)
+                    }
                 }
-                None => crate::paths::renders_dir()
-                    .join(format!("{}.wav", crate::actions::safe_name(&self.project.name))),
+                None => crate::paths::renders_dir().join(format!(
+                    "{}.wav",
+                    crate::actions::safe_name(&self.project.name)
+                )),
             };
 
             let snapshot = self.build_render_snapshot(mode);

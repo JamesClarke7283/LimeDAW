@@ -25,7 +25,10 @@ impl LimeDaw {
                 self.piano_roll.scroll_beats = beats.max(0.0);
                 self.piano_roll.top_key = top_key.clamp(12.0, 127.0);
             }
-            piano_roll::Action::Zoom { pixels_per_beat, key_height } => {
+            piano_roll::Action::Zoom {
+                pixels_per_beat,
+                key_height,
+            } => {
                 self.piano_roll.pixels_per_beat = pixels_per_beat.clamp(8.0, 800.0);
                 self.piano_roll.key_height = key_height.clamp(6.0, 40.0);
             }
@@ -60,10 +63,10 @@ impl LimeDaw {
             }
             piano_roll::Action::DragNewNote { end } => {
                 if let Some(id) = self.piano_roll.last_created {
-                    if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                        if let Some(note) = pattern.note_mut(id) {
-                            note.length = (end - note.start).max(1.0 / 64.0);
-                        }
+                    if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                        && let Some(note) = pattern.note_mut(id)
+                    {
+                        note.length = (end - note.start).max(1.0 / 64.0);
                     }
                     self.touch();
                 }
@@ -145,7 +148,12 @@ impl LimeDaw {
                 self.engine.resume();
                 self.preview(id, key);
             }
-            channel_rack::Action::Paint { channel, step, on, first } => {
+            channel_rack::Action::Paint {
+                channel,
+                step,
+                on,
+                first,
+            } => {
                 // One checkpoint per drag, so undo steps back a whole gesture.
                 if first {
                     self.checkpoint();
@@ -173,7 +181,11 @@ impl LimeDaw {
             }
             (None, true) => {
                 let id = self.project.next_id();
-                let key = self.project.channel(channel).map(|c| c.step_key).unwrap_or(60);
+                let key = self
+                    .project
+                    .channel(channel)
+                    .map(|c| c.step_key)
+                    .unwrap_or(60);
                 let velocity = self.settings.default_velocity;
                 if let Some(pattern) = self.project.pattern_mut(pattern_id) {
                     pattern.notes.push(Note {
@@ -298,7 +310,8 @@ impl LimeDaw {
             automation::Action::AddLane(target) => {
                 self.checkpoint();
                 if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(index) = pattern.automation.iter().position(|l| l.target == target) {
+                    if let Some(index) = pattern.automation.iter().position(|l| l.target == target)
+                    {
                         self.automation.lane = index;
                     } else {
                         pattern.automation.push(AutomationLane::new(target));
@@ -310,10 +323,10 @@ impl LimeDaw {
             }
             automation::Action::RemoveLane(index) => {
                 self.checkpoint();
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if index < pattern.automation.len() {
-                        pattern.automation.remove(index);
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && index < pattern.automation.len()
+                {
+                    pattern.automation.remove(index);
                 }
                 self.automation.lane = self.automation.lane.saturating_sub(1);
                 self.touch();
@@ -322,56 +335,57 @@ impl LimeDaw {
             automation::Action::AddPoint { beat, value } => {
                 self.checkpoint();
                 let lane_index = self.automation.lane;
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(lane) = pattern.automation.get_mut(lane_index) {
-                        lane.points.push(AutomationPoint { beat, value, curve: Curve::Linear });
-                        lane.sort();
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && let Some(lane) = pattern.automation.get_mut(lane_index)
+                {
+                    lane.points.push(AutomationPoint {
+                        beat,
+                        value,
+                        curve: Curve::Linear,
+                    });
+                    lane.sort();
                 }
                 self.touch();
             }
             automation::Action::MovePoint { index, beat, value } => {
                 // Deliberately not sorted here: the drag is holding this index.
                 let lane_index = self.automation.lane;
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(lane) = pattern.automation.get_mut(lane_index) {
-                        if let Some(point) = lane.points.get_mut(index) {
-                            point.beat = beat.max(0.0);
-                            point.value = value.clamp(0.0, 1.0);
-                        }
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && let Some(lane) = pattern.automation.get_mut(lane_index)
+                    && let Some(point) = lane.points.get_mut(index)
+                {
+                    point.beat = beat.max(0.0);
+                    point.value = value.clamp(0.0, 1.0);
                 }
                 self.touch();
             }
             automation::Action::SortLane => {
                 let lane_index = self.automation.lane;
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(lane) = pattern.automation.get_mut(lane_index) {
-                        lane.sort();
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && let Some(lane) = pattern.automation.get_mut(lane_index)
+                {
+                    lane.sort();
                 }
                 self.touch();
             }
             automation::Action::RemovePoint(index) => {
                 self.checkpoint();
                 let lane_index = self.automation.lane;
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(lane) = pattern.automation.get_mut(lane_index) {
-                        if index < lane.points.len() {
-                            lane.points.remove(index);
-                        }
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && let Some(lane) = pattern.automation.get_mut(lane_index)
+                    && index < lane.points.len()
+                {
+                    lane.points.remove(index);
                 }
                 self.touch();
             }
             automation::Action::SetCurve { index, curve } => {
                 let lane_index = self.automation.lane;
-                if let Some(pattern) = self.project.pattern_mut(pattern_id) {
-                    if let Some(lane) = pattern.automation.get_mut(lane_index) {
-                        if let Some(point) = lane.points.get_mut(index) {
-                            point.curve = curve;
-                        }
-                    }
+                if let Some(pattern) = self.project.pattern_mut(pattern_id)
+                    && let Some(lane) = pattern.automation.get_mut(lane_index)
+                    && let Some(point) = lane.points.get_mut(index)
+                {
+                    point.curve = curve;
                 }
                 self.touch();
             }

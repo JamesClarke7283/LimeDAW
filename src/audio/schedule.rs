@@ -105,12 +105,12 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
     let beats_per_bar = project.beats_per_bar();
 
     let push_pattern = |pattern_id: Id,
-                            clip_start: f64,
-                            clip_len: f64,
-                            clip_offset: f64,
-                            notes: &mut Vec<ScheduledNote>,
-                            automation: &mut Vec<FlatLane>,
-                            uid: &mut u32| {
+                        clip_start: f64,
+                        clip_len: f64,
+                        clip_offset: f64,
+                        notes: &mut Vec<ScheduledNote>,
+                        automation: &mut Vec<FlatLane>,
+                        uid: &mut u32| {
         let Some(pattern) = project.pattern(pattern_id) else {
             return;
         };
@@ -162,7 +162,10 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
                 let entry = match automation.iter().position(|l| l.target == lane.target) {
                     Some(i) => &mut automation[i],
                     None => {
-                        automation.push(FlatLane { target: lane.target, points: Vec::new() });
+                        automation.push(FlatLane {
+                            target: lane.target,
+                            points: Vec::new(),
+                        });
                         automation.last_mut().unwrap()
                     }
                 };
@@ -203,16 +206,17 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
                             if !lane.enabled {
                                 continue;
                             }
-                            let entry = match automation.iter().position(|l| l.target == lane.target) {
-                                Some(i) => &mut automation[i],
-                                None => {
-                                    automation.push(FlatLane {
-                                        target: lane.target,
-                                        points: Vec::new(),
-                                    });
-                                    automation.last_mut().unwrap()
-                                }
-                            };
+                            let entry =
+                                match automation.iter().position(|l| l.target == lane.target) {
+                                    Some(i) => &mut automation[i],
+                                    None => {
+                                        automation.push(FlatLane {
+                                            target: lane.target,
+                                            points: Vec::new(),
+                                        });
+                                        automation.last_mut().unwrap()
+                                    }
+                                };
                             for p in &lane.points {
                                 let beat = clip.start + p.beat - clip.offset;
                                 if beat >= clip.start - 1e-9 && beat <= clip.end() + 1e-9 {
@@ -227,7 +231,11 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
         }
     };
 
-    notes.sort_by(|a, b| a.beat.partial_cmp(&b.beat).unwrap_or(std::cmp::Ordering::Equal));
+    notes.sort_by(|a, b| {
+        a.beat
+            .partial_cmp(&b.beat)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     for lane in &mut automation {
         lane.points
             .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -243,7 +251,11 @@ pub fn compile(project: &Project, mode: PlayMode) -> Schedule {
         lane.points = deduped;
     }
 
-    Schedule { notes, automation, length: length.max(0.25) }
+    Schedule {
+        notes,
+        automation,
+        length: length.max(0.25),
+    }
 }
 
 /// Everything the audio engine needs, resolved and ready to play.

@@ -33,7 +33,12 @@ pub fn format_position(beat: f64, beats_per_bar: f64) -> String {
     let within = beat - bar * bpb;
     let beat_in_bar = within.floor();
     let sixteenth = ((within - beat_in_bar) * 4.0).floor();
-    format!("{}:{}:{}", bar as i64 + 1, beat_in_bar as i64 + 1, sixteenth as i64 + 1)
+    format!(
+        "{}:{}:{}",
+        bar as i64 + 1,
+        beat_in_bar as i64 + 1,
+        sixteenth as i64 + 1
+    )
 }
 
 /// Format seconds as m:ss.t.
@@ -46,7 +51,9 @@ pub fn format_time(seconds: f64) -> String {
 
 /// The MIDI note name for a key.
 pub fn note_name(key: u8) -> String {
-    const NAMES: [&str; 12] = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const NAMES: [&str; 12] = [
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+    ];
     let octave = key as i32 / 12 - 1;
     format!("{}{}", NAMES[(key % 12) as usize], octave)
 }
@@ -60,7 +67,9 @@ pub fn is_black_key(key: u8) -> bool {
 pub fn caption<'a, M: 'a>(content: impl text::IntoFragment<'a>) -> Element<'a, M> {
     text(content)
         .size(11)
-        .style(|theme: &Theme| text::Style { color: Some(theme::palette(theme).text_dim) })
+        .style(|theme: &Theme| text::Style {
+            color: Some(theme::palette(theme).text_dim),
+        })
         .into()
 }
 
@@ -70,12 +79,15 @@ pub fn heading<'a, M: 'a>(content: impl text::IntoFragment<'a>) -> Element<'a, M
 }
 
 /// Wrap a widget with a hover tooltip.
-pub fn hint<'a, M: 'a>(
-    content: impl Into<Element<'a, M>>,
-    label: &'a str,
-) -> Element<'a, M> {
-    tooltip(content, container(text(label).size(11)).padding(6).style(theme::card), tooltip::Position::Bottom)
-        .into()
+pub fn hint<'a, M: 'a>(content: impl Into<Element<'a, M>>, label: &'a str) -> Element<'a, M> {
+    tooltip(
+        content,
+        container(text(label).size(11))
+            .padding(6)
+            .style(theme::card),
+        tooltip::Position::Bottom,
+    )
+    .into()
 }
 
 pub fn spacer<'a, M: 'a>(size: u16) -> Element<'a, M> {
@@ -117,13 +129,15 @@ pub struct Knob<'a, Message> {
 }
 
 impl<'a, Message> Knob<'a, Message> {
-    pub fn new(
-        value: f32,
-        min: f32,
-        max: f32,
-        on_change: impl Fn(f32) -> Message + 'a,
-    ) -> Self {
-        Self { value, min, max, centre: None, on_change: Box::new(on_change), tint: None }
+    pub fn new(value: f32, min: f32, max: f32, on_change: impl Fn(f32) -> Message + 'a) -> Self {
+        Self {
+            value,
+            min,
+            max,
+            centre: None,
+            on_change: Box::new(on_change),
+            tint: None,
+        }
     }
 
     /// Draw the value arc outward from a centre point, for pan-style controls.
@@ -256,8 +270,18 @@ impl<Message: Clone> canvas::Program<Message> for Knob<'_, Message> {
 
         // Body.
         let body = Path::circle(centre, (radius - 6.0).max(1.0));
-        frame.fill(&body, if hovered { theme::lighten(p.surface_high, 0.04) } else { p.surface_high });
-        frame.stroke(&body, Stroke::default().with_color(p.border).with_width(1.0));
+        frame.fill(
+            &body,
+            if hovered {
+                theme::lighten(p.surface_high, 0.04)
+            } else {
+                p.surface_high
+            },
+        );
+        frame.stroke(
+            &body,
+            Stroke::default().with_color(p.border).with_width(1.0),
+        );
 
         // Pointer.
         let angle = START + SWEEP * t;
@@ -309,6 +333,58 @@ pub fn knob<'a, Message: Clone + 'a>(
 ) -> Element<'a, Message> {
     column![
         Canvas::new(Knob::new(value, min, max, on_change))
+            .width(Length::Fixed(size))
+            .height(Length::Fixed(size)),
+        text(label).size(10).style(|theme: &Theme| text::Style {
+            color: Some(theme::palette(theme).text_dim)
+        }),
+        text(display).size(10),
+    ]
+    .align_x(Alignment::Center)
+    .spacing(1)
+    .into()
+}
+
+/// A knob tinted to match its channel or device.
+#[allow(clippy::too_many_arguments)]
+pub fn knob_tinted<'a, Message: Clone + 'a>(
+    label: &'a str,
+    display: String,
+    value: f32,
+    min: f32,
+    max: f32,
+    size: f32,
+    tint: Color,
+    on_change: impl Fn(f32) -> Message + 'a,
+) -> Element<'a, Message> {
+    column![
+        Canvas::new(Knob::new(value, min, max, on_change).tint(tint))
+            .width(Length::Fixed(size))
+            .height(Length::Fixed(size)),
+        text(label).size(10).style(|theme: &Theme| text::Style {
+            color: Some(theme::palette(theme).text_dim)
+        }),
+        text(display).size(10),
+    ]
+    .align_x(Alignment::Center)
+    .spacing(1)
+    .into()
+}
+
+/// A tinted bipolar knob, for parameters that swing either side of centre.
+#[allow(clippy::too_many_arguments)]
+pub fn knob_bipolar_tinted<'a, Message: Clone + 'a>(
+    label: &'a str,
+    display: String,
+    value: f32,
+    min: f32,
+    max: f32,
+    size: f32,
+    tint: Color,
+    on_change: impl Fn(f32) -> Message + 'a,
+) -> Element<'a, Message> {
+    column![
+        Canvas::new(Knob::new(value, min, max, on_change).bipolar().tint(tint))
             .width(Length::Fixed(size))
             .height(Length::Fixed(size)),
         text(label).size(10).style(|theme: &Theme| text::Style {
@@ -415,11 +491,20 @@ impl<Message> canvas::Program<Message> for LevelMeter {
     }
 }
 
-pub fn meter<'a, Message: 'a>(left: f32, right: f32, width: f32, height: f32) -> Element<'a, Message> {
-    Canvas::new(LevelMeter { left, right, horizontal: width > height })
-        .width(Length::Fixed(width))
-        .height(Length::Fixed(height))
-        .into()
+pub fn meter<'a, Message: 'a>(
+    left: f32,
+    right: f32,
+    width: f32,
+    height: f32,
+) -> Element<'a, Message> {
+    Canvas::new(LevelMeter {
+        left,
+        right,
+        horizontal: width > height,
+    })
+    .width(Length::Fixed(width))
+    .height(Length::Fixed(height))
+    .into()
 }
 
 // ---------------------------------------------------------------------------
@@ -495,7 +580,9 @@ impl<Message> canvas::Program<Message> for Waveform {
         let centre = Path::line(Point::new(0.0, mid), Point::new(bounds.width, mid));
         frame.stroke(
             &centre,
-            Stroke::default().with_color(theme::alpha(p.text_dim, 0.35)).with_width(1.0),
+            Stroke::default()
+                .with_color(theme::alpha(p.text_dim, 0.35))
+                .with_width(1.0),
         );
 
         vec![frame.into_geometry()]
@@ -509,10 +596,15 @@ pub fn waveform<'a, Message: 'a>(
     tint: Color,
     height: f32,
 ) -> Element<'a, Message> {
-    Canvas::new(Waveform { peaks, start, end, tint })
-        .width(Length::Fill)
-        .height(Length::Fixed(height))
-        .into()
+    Canvas::new(Waveform {
+        peaks,
+        start,
+        end,
+        tint,
+    })
+    .width(Length::Fill)
+    .height(Length::Fixed(height))
+    .into()
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +612,7 @@ pub fn waveform<'a, Message: 'a>(
 // ---------------------------------------------------------------------------
 
 /// Draw the vertical grid for a beat-based timeline.
+#[allow(clippy::too_many_arguments)]
 pub fn draw_beat_grid(
     frame: &mut Frame,
     p: &Palette,
@@ -535,7 +628,11 @@ pub fn draw_beat_grid(
     let last = scroll_beats + visible_beats + 1.0;
 
     // Fine grid lines only once they are far enough apart to read.
-    let fine = if pixels_per_beat * snap as f32 >= 6.0 { snap } else { 1.0 };
+    let fine = if pixels_per_beat * snap as f32 >= 6.0 {
+        snap
+    } else {
+        1.0
+    };
     let mut beat = (first / fine).floor() * fine;
     while beat <= last {
         let x = x_offset + ((beat - scroll_beats) * pixels_per_beat as f64) as f32;
@@ -569,7 +666,11 @@ pub fn draw_playhead(
     if x < x_offset || x > bounds.width {
         return;
     }
-    frame.fill_rectangle(Point::new(x - 1.0, 0.0), Size::new(2.0, bounds.height), p.playhead);
+    frame.fill_rectangle(
+        Point::new(x - 1.0, 0.0),
+        Size::new(2.0, bounds.height),
+        p.playhead,
+    );
 }
 
 /// A label drawn into a canvas.

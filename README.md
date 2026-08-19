@@ -1,3 +1,5 @@
+<img src="assets/limedaw.png" width="96" align="right" alt="">
+
 # LimeDAW
 
 A pattern-based digital audio workstation in Rust, built on [iced].
@@ -95,9 +97,24 @@ channel or mixer level, any effect parameter, and any instrument parameter.
 
 ### Effects
 
-Reverb, delay (tempo-synced, optional ping-pong), chorus, distortion, filter,
-three-band EQ, compressor, limiter, bitcrush, phaser, flanger, gate and a
-stereo width tool. Available on channels and on mixer inserts.
+Thirteen of them, on channels and on mixer inserts alike:
+
+| Family | Effects |
+| --- | --- |
+| Dynamics | Compressor, Limiter, Gate |
+| Tone | Filter, EQ |
+| Modulation | Chorus, Phaser, Flanger |
+| Time | Reverb, Delay |
+| Drive | Distortion, Bitcrush |
+| Stereo | Stereo width |
+
+Each one shows every parameter as a labelled knob, grouped by what it does —
+*Space*, *Tone* and *Output* on the reverb; *Detection*, *Timing* and *Output*
+on the compressor — with switches drawn as buttons and enumerated parameters as
+menus rather than knobs you have to guess at. Every effect carries presets
+(Room, Hall, Plate, Cathedral, Ambience for the reverb; Slapback, Eighth,
+Dotted, Ping-pong, Dub for the delay), and the chain can be reordered, bypassed
+per slot, cleared or copied wholesale to another track.
 
 ### Keyboard
 
@@ -177,6 +194,22 @@ play
 Positions are in beats (a quarter note is `1.0`) and keys are MIDI numbers
 (middle C is `60`).
 
+Effects are fully instrumented too. `list_effect_kinds` returns the catalogue —
+every effect with its family, its parameters and ranges, which of them are
+switches or menus, and what presets it offers — so a client can discover the
+whole surface before touching anything:
+
+```
+add_effect            { "kind": "reverb", "track": 1 }
+apply_effect_preset   { "track": 1, "slot": 0, "preset": "Hall" }
+set_effect_params     { "track": 1, "slot": 0, "params": { "mix": 0.3, "damping": 0.4 } }
+move_effect           { "track": 1, "slot": 0, "to": 2 }
+copy_effects          { "from_track": 1, "to_track": 4 }
+```
+
+Parameters can be given in their own units or as a `normalised` 0-1 position
+within the range, which is the easier one to sweep.
+
 ---
 
 ## Layout of the source
@@ -197,6 +230,16 @@ The engine core is free of I/O: the desktop host drives it from a cpal
 callback, the web host from a WebAudio node, and the offline renderer from a
 plain loop. Project edits reach it as an immutable snapshot, and anything the
 audio thread finishes with is handed back to be freed off-thread.
+
+## Icon
+
+The lime is drawn in code rather than shipped as a blob: [`src/icon.rs`](src/icon.rs)
+renders it to RGBA for the window icon and to SVG for the desktop entry and the
+web favicon. Regenerate the files in `assets/` with:
+
+```bash
+cargo run --example generate_icon
+```
 
 ## Licence
 

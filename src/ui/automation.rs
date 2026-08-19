@@ -23,7 +23,11 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
-        Self { visible: false, lane: 0, height: 140.0 }
+        Self {
+            visible: false,
+            lane: 0,
+            height: 140.0,
+        }
     }
 }
 
@@ -34,10 +38,20 @@ pub enum Action {
     AddLane(AutomationTarget),
     RemoveLane(usize),
     Checkpoint,
-    AddPoint { beat: f64, value: f64 },
-    MovePoint { index: usize, beat: f64, value: f64 },
+    AddPoint {
+        beat: f64,
+        value: f64,
+    },
+    MovePoint {
+        index: usize,
+        beat: f64,
+        value: f64,
+    },
     RemovePoint(usize),
-    SetCurve { index: usize, curve: Curve },
+    SetCurve {
+        index: usize,
+        curve: Curve,
+    },
     /// Re-sort the lane once a drag ends; sorting mid-drag would move the
     /// point out from under the index the gesture is holding.
     SortLane,
@@ -256,10 +270,26 @@ impl canvas::Program<Action> for LaneCanvas<'_> {
             ));
         }
 
-        ui::draw_playhead(&mut frame, &p, size, 0.0, self.pixels_per_beat, self.scroll_beats, self.position);
+        ui::draw_playhead(
+            &mut frame,
+            &p,
+            size,
+            0.0,
+            self.pixels_per_beat,
+            self.scroll_beats,
+            self.position,
+        );
 
-        frame.fill_rectangle(Point::ORIGIN, Size::new(size.width, RULER_HEIGHT), theme::alpha(p.surface_high, 0.9));
-        frame.fill_rectangle(Point::new(0.0, RULER_HEIGHT), Size::new(size.width, 1.0), p.border);
+        frame.fill_rectangle(
+            Point::ORIGIN,
+            Size::new(size.width, RULER_HEIGHT),
+            theme::alpha(p.surface_high, 0.9),
+        );
+        frame.fill_rectangle(
+            Point::new(0.0, RULER_HEIGHT),
+            Size::new(size.width, 1.0),
+            p.border,
+        );
 
         vec![frame.into_geometry()]
     }
@@ -345,9 +375,15 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
 
     column![
         container(
-            row![ui::caption("Automation"), lane_buttons, iced::widget::space::horizontal(), add, remove]
-                .spacing(8)
-                .align_y(Alignment::Center)
+            row![
+                ui::caption("Automation"),
+                lane_buttons,
+                iced::widget::space::horizontal(),
+                add,
+                remove
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
         )
         .padding([3, 8])
         .style(theme::header),
@@ -370,7 +406,11 @@ fn lane_label(app: &LimeDaw, lane: &AutomationLane) -> String {
         AutomationTarget::MixerEffect { track, slot, param } => {
             format!("{} fx{slot} {param}", mixer_name(app, track))
         }
-        AutomationTarget::ChannelEffect { channel, slot, param } => {
+        AutomationTarget::ChannelEffect {
+            channel,
+            slot,
+            param,
+        } => {
             format!("{} fx{slot} {param}", channel_name(app, channel))
         }
         AutomationTarget::Instrument { channel, param } => {
@@ -402,8 +442,14 @@ pub fn available_targets(app: &LimeDaw) -> Vec<(String, AutomationTarget)> {
         ("Master volume".to_string(), AutomationTarget::MasterVolume),
     ];
     for channel in &app.project.channels {
-        out.push((format!("{} volume", channel.name), AutomationTarget::ChannelVolume(channel.id)));
-        out.push((format!("{} pan", channel.name), AutomationTarget::ChannelPan(channel.id)));
+        out.push((
+            format!("{} volume", channel.name),
+            AutomationTarget::ChannelVolume(channel.id),
+        ));
+        out.push((
+            format!("{} pan", channel.name),
+            AutomationTarget::ChannelPan(channel.id),
+        ));
         for param in channel.instrument.params() {
             out.push((
                 format!("{} · {}", channel.name, param.label),
@@ -427,13 +473,23 @@ pub fn available_targets(app: &LimeDaw) -> Vec<(String, AutomationTarget)> {
         }
     }
     for (index, track) in app.project.mixer.tracks.iter().enumerate() {
-        out.push((format!("{} volume", track.name), AutomationTarget::MixerVolume(index)));
-        out.push((format!("{} pan", track.name), AutomationTarget::MixerPan(index)));
+        out.push((
+            format!("{} volume", track.name),
+            AutomationTarget::MixerVolume(index),
+        ));
+        out.push((
+            format!("{} pan", track.name),
+            AutomationTarget::MixerPan(index),
+        ));
         for (slot, effect) in track.effects.iter().enumerate() {
             for (name, _, _, _) in effect.kind.params() {
                 out.push((
                     format!("{} · {} {}", track.name, effect.name(), name),
-                    AutomationTarget::MixerEffect { track: index, slot, param: ParamRef::new(name) },
+                    AutomationTarget::MixerEffect {
+                        track: index,
+                        slot,
+                        param: ParamRef::new(name),
+                    },
                 ));
             }
         }
