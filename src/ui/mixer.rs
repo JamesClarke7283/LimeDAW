@@ -10,7 +10,7 @@ use crate::ui;
 const STRIP_WIDTH: f32 = 78.0;
 
 pub fn view(app: &LimeDaw) -> Element<'_, Message> {
-    let strips = row(app
+    let mut strips = row(app
         .project
         .mixer
         .tracks
@@ -18,6 +18,18 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .enumerate()
         .map(|(index, _)| strip(app, index)))
     .spacing(4);
+
+    // LMMS grows its FX-Mixer a channel at a time; the button does the same.
+    strips = strips.push(
+        container(
+            button(text("+").size(18))
+                .padding([10, 16])
+                .style(theme::button_plain)
+                .on_press(Message::AddMixerTrack),
+        )
+        .height(Length::Fill)
+        .center_y(Length::Fill),
+    );
 
     container(
         scrollable(container(strips).padding(6))
@@ -97,7 +109,19 @@ fn strip(app: &LimeDaw, index: usize) -> Element<'_, Message> {
         format!("{fx_count} fx")
     };
 
+    // The insert's number, the way an FX channel is labelled in LMMS.
+    let number = text(if is_master {
+        "M".to_string()
+    } else {
+        index.to_string()
+    })
+    .size(10)
+    .style(|theme: &Theme| text::Style {
+        color: Some(theme::palette(theme).text_dim),
+    });
+
     let body = column![
+        number,
         name,
         pan,
         row![slider_column(fader), meters,]

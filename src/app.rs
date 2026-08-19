@@ -162,6 +162,7 @@ pub enum Message {
     SetRenderer(RendererChoice),
     SetUiScale(f32),
     SetRackZoom(f32),
+    RackScrolled(f32),
     FocusEffects(FxHost),
     ToggleEffectsDock,
     SetEffectsDockHeight(f32),
@@ -247,6 +248,8 @@ pub enum Message {
 
     // ---- mixer ----
     SelectMixerTrack(usize),
+    AddMixerTrack,
+    RemoveMixerTrack(usize),
     SetMixerVolume(usize, f32),
     SetMixerPan(usize, f32),
     ToggleMixerMute(usize),
@@ -387,6 +390,9 @@ pub struct LimeDaw {
     pub open_menu: Option<crate::ui::menu::MenuId>,
     /// Width of one step cell in the channel rack, in pixels.
     pub rack_zoom: f32,
+    /// Bars added beyond the pattern's content, grown as the rack is scrolled
+    /// so the grid never runs out to the right.
+    pub rack_extra_bars: usize,
     /// Which chain the effects dock along the bottom is showing.
     pub fx_focus: FxHost,
     pub setup: Setup,
@@ -504,6 +510,7 @@ impl LimeDaw {
             browser_tab: BrowserTab::Instruments,
             open_menu: None,
             rack_zoom: 26.0,
+            rack_extra_bars: 8,
             fx_focus: FxHost::MixerTrack(0),
             setup,
             selected_channel,

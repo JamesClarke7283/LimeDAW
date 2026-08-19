@@ -392,9 +392,9 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         .fold(0.0f64, f64::max)
         .max(pattern.length_override.unwrap_or(0.0));
     let content_steps = (content_beats / step_beats).ceil() as usize;
-    // Always at least sixteen bars, and always four spare beyond the last
-    // note, so the grid reads as a continuous timeline rather than a page.
-    let steps = (content_steps + steps_per_bar * 4)
+    // The grid runs past the content by however far it has been scrolled, so
+    // there is always more of it to the right.
+    let steps = (content_steps + steps_per_bar * app.rack_extra_bars)
         .next_multiple_of(steps_per_bar)
         .max(steps_per_bar * 16);
 
@@ -445,9 +445,11 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let body = scrollable(
         row![
             strips,
-            scrollable(grid).direction(scrollable::Direction::Horizontal(
-                scrollable::Scrollbar::new().width(6).scroller_width(6)
-            ))
+            scrollable(grid)
+                .direction(scrollable::Direction::Horizontal(
+                    scrollable::Scrollbar::new().width(8).scroller_width(8),
+                ))
+                .on_scroll(|viewport| Message::RackScrolled(viewport.relative_offset().x))
         ]
         .spacing(6),
     )

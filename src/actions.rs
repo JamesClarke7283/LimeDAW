@@ -226,6 +226,13 @@ impl LimeDaw {
             Message::SetRackZoom(width) => {
                 self.rack_zoom = width.clamp(4.0, 64.0);
             }
+            Message::RackScrolled(relative_x) => {
+                // Approaching the right-hand edge adds more bars, so the grid
+                // keeps going for as long as it is scrolled.
+                if relative_x > 0.82 {
+                    self.rack_extra_bars = (self.rack_extra_bars + 8).min(4096);
+                }
+            }
             Message::SetBufferFrames(frames) => {
                 self.settings.buffer_frames = frames;
                 let _ = self.settings.save();
@@ -681,6 +688,51 @@ impl LimeDaw {
                 // its effects without a second click.
                 self.fx_focus = FxHost::MixerTrack(self.selected_mixer_track);
             }
+            Message::AddMixerTrack => {
+                if self.project.mixer.tracks.len() >= 64 {
+                    self.note("The mixer is full");
+                } else {
+                    self.checkpoint();
+                    let index = self.project.mixer.tracks.len();
+                    self.project
+                        .mixer
+                        .tracks
+                        .push(MixerTrack::new(format!("Insert {index}")));
+                    self.selected_mixer_track = index;
+                    self.fx_focus = FxHost::MixerTrack(index);
+                    self.touch();
+                }
+            }
+            Message::RemoveMixerTrack(track) => {
+                if track == 0 {
+                    self.note("The master cannot be removed");
+                } else if self.project.channels.iter().any(|c| c.mixer_track == track) {
+                    self.note("A channel is still routed to that insert");
+                } else {
+                    self.checkpoint();
+                    self.project.mixer.tracks.remove(track);
+                    // Anything routed past the gap shuffles down with it.
+                    for channel in &mut self.project.channels {
+                        if channel.mixer_track > track {
+                            channel.mixer_track -= 1;
+                        }
+                    }
+                    for t in &mut self.project.mixer.tracks {
+                        t.sends.retain(|(dst, _)| *dst != track);
+                        for (dst, _) in &mut t.sends {
+                            if *dst > track {
+                                *dst -= 1;
+                            }
+                        }
+                    }
+                    self.selected_mixer_track = self
+                        .selected_mixer_track
+                        .min(self.project.mixer.tracks.len() - 1);
+                    self.fx_focus = FxHost::MixerTrack(self.selected_mixer_track);
+                    self.forget_effect_chains();
+                    self.touch();
+                }
+            }
             Message::SetMixerVolume(track, v) => {
                 if let Some(t) = self.project.mixer.tracks.get_mut(track) {
                     t.volume = v.clamp(0.0, 2.0);
@@ -773,7 +825,9 @@ impl LimeDaw {
                 self.touch();
             }
             Message::SelectEffect(host, slot) => {
-                self.selected_effect = Some((host, slot));
+                // `usize::MAX` collapses, which keeps the expand control to a
+                // single message.
+                self.selected_effect = (slot != usize::MAX).then_some((host, slot));
             }
             Message::ApplyEffectPreset(host, slot, name) => {
                 self.checkpoint();

@@ -1,9 +1,11 @@
-//! The effect rack: a device panel per effect, with every parameter on show.
+//! The effects rack.
 //!
-//! Shared by the mixer and the channel strip, so an effect looks and behaves
-//! the same wherever it is inserted.
+//! Laid out the way LMMS lays out an effects chain: a titled list of compact
+//! entries, one line each, with an "Add effect" control underneath. Opening an
+//! entry's controls reveals its parameters as grouped knobs, so a long chain
+//! stays readable and a single effect is still fully editable.
 
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, tooltip};
+use iced::widget::{Space, button, column, container, pick_list, row, scrollable, text, tooltip};
 use iced::{Alignment, Color, Element, Length, Theme};
 
 use crate::app::{FxHost, LimeDaw, Message};
@@ -150,7 +152,11 @@ fn arrow<'a>() -> Element<'a, Message> {
         .into()
 }
 
-/// The chain for one host, as a stack of device panels.
+/// The chain for one host: a titled list of compact entries with an "Add
+/// effect" control at the bottom, the way LMMS presents an effects chain.
+///
+/// Each entry stays one line until its controls are opened, so a long chain
+/// can be taken in at a glance rather than scrolled through.
 pub fn view(app: &LimeDaw, host: FxHost) -> Element<'_, Message> {
     let tint = match host {
         FxHost::Channel(id) => match app.project.channel(id) {
@@ -169,42 +175,58 @@ pub fn view(app: &LimeDaw, host: FxHost) -> Element<'_, Message> {
         return container(text("")).into();
     };
 
-    let devices: Element<'_, Message> = if chain.is_empty() {
+    let list: Element<'_, Message> = if chain.is_empty() {
         container(
             column![
-                text("No effects yet").size(13),
-                ui::caption("Pick one below to start shaping the sound."),
+                text("No effects").size(12),
+                ui::caption("Add one below to start shaping the sound."),
             ]
-            .spacing(4)
+            .spacing(3)
             .align_x(Alignment::Center),
         )
-        .padding(24)
+        .padding(20)
         .width(Length::Fill)
-        .style(theme::well)
+        .center_x(Length::Fill)
         .into()
     } else {
         column(
             chain
                 .iter()
                 .enumerate()
-                .map(|(slot, effect)| device(host, slot, effect, chain.len(), tint)),
+                .map(|(slot, effect)| entry(app, host, slot, effect, chain.len(), tint)),
         )
-        .spacing(8)
+        .spacing(4)
         .into()
     };
 
-    scrollable(
-        column![devices, add_menu(host)]
-            .spacing(10)
-            .padding([8, 10]),
+    container(
+        column![
+            container(
+                row![
+                    ui::caption("EFFECTS CHAIN"),
+                    iced::widget::space::horizontal(),
+                    ui::caption(format!("{}", chain.len())),
+                ]
+                .align_y(Alignment::Center)
+            )
+            .padding([4, 8])
+            .width(Length::Fill)
+            .style(theme::well),
+            scrollable(container(list).padding(6))
+                .style(theme::scroll)
+                .height(Length::Fill),
+            add_menu(host),
+        ]
+        .spacing(4),
     )
-    .style(theme::scroll)
+    .padding(6)
     .height(Length::Fill)
     .into()
 }
 
-/// One effect, drawn as a device with a header and its parameters laid out.
-fn device<'a>(
+/// One effect in the chain: a single line, plus its controls when opened.
+fn entry<'a>(
+    app: &'a LimeDaw,
     host: FxHost,
     slot: usize,
     effect: &'a crate::model::Effect,
@@ -212,100 +234,126 @@ fn device<'a>(
     tint: Color,
 ) -> Element<'a, Message> {
     let enabled = effect.enabled;
-    let is_first = slot == 0;
-    let is_last = slot + 1 == chain_len;
+    let expanded = app.selected_effect == Some((host, slot));
 
-    let power = tooltip(
-        button(text(if enabled { "⏻" } else { "○" }).size(12))
-            .padding([3, 8])
-            .style(move |theme: &Theme, status| {
-                theme::button_toggle(theme, status, enabled, theme::palette(theme).accent)
-            })
+    // The indicator doubles as the bypass switch, like the LED on an LMMS
+    // effect.
+    let led = tooltip(
+        button(text(if enabled { "●" } else { "○" }).size(11))
+            .padding([2, 7])
+            .style(move |theme: &Theme, status| theme::button_toggle(theme, status, enabled, tint))
             .on_press(Message::ToggleEffect(host, slot)),
         container(text(if enabled { "Bypass" } else { "Enable" }).size(11))
             .padding(6)
             .style(theme::card),
-        tooltip::Position::Bottom,
+        tooltip::Position::Top,
     );
+
+    // Wet/dry, the one control worth having on every line.
+    let values = effect.kind.params();
+    let wet: Element<'_, Message> = match values.iter().copied().find(|(n, _, _, _)| *n == "mix") {
+        Some((_, value, min, max)) => ui::knob_tinted(
+            "W/D",
+            format!("{:.0}%", value * 100.0),
+            value,
+            min,
+            max,
+            30.0,
+            tint,
+            move |v| Message::SetEffectParam(host, slot, "mix".to_string(), v),
+        ),
+        None => Space::new().width(Length::Fixed(30.0)).into(),
+    };
 
     let presets = effect.kind.presets();
     let preset_names: Vec<String> = presets.iter().map(|(n, _)| (*n).to_string()).collect();
-    let preset_picker: Element<'_, Message> = if preset_names.is_empty() {
-        container(text("")).into()
-    } else {
-        pick_list(preset_names, None::<String>, move |name: String| {
-            Message::ApplyEffectPreset(host, slot, name)
-        })
-        .placeholder("Preset…")
-        .text_size(11)
-        .padding([3, 8])
-        .style(theme::picker)
-        .into()
-    };
 
-    let mut move_up = button(text("↑").size(10))
-        .padding([3, 7])
+    let mut move_up = button(text("↑").size(9))
+        .padding([2, 6])
         .style(theme::button_plain);
-    if !is_first {
+    if slot > 0 {
         move_up = move_up.on_press(Message::MoveEffect(host, slot, -1));
     }
-    let mut move_down = button(text("↓").size(10))
-        .padding([3, 7])
+    let mut move_down = button(text("↓").size(9))
+        .padding([2, 6])
         .style(theme::button_plain);
-    if !is_last {
+    if slot + 1 < chain_len {
         move_down = move_down.on_press(Message::MoveEffect(host, slot, 1));
     }
 
     let header = row![
-        power,
-        column![
-            text(format!("{}. {}", slot + 1, effect.name())).size(13),
-            ui::caption(effect.description()),
-        ]
-        .spacing(0),
+        led,
+        container(text(effect.name()).size(12)).width(Length::Fixed(96.0)),
+        wet,
+        button(
+            text(if expanded {
+                "Controls ▾"
+            } else {
+                "Controls ▸"
+            })
+            .size(10)
+        )
+        .padding([4, 9])
+        .style(move |theme: &Theme, status| theme::button_tab(theme, status, expanded))
+        .on_press(if expanded {
+            Message::SelectEffect(host, usize::MAX)
+        } else {
+            Message::SelectEffect(host, slot)
+        }),
+        pick_list(preset_names, None::<String>, move |name: String| {
+            Message::ApplyEffectPreset(host, slot, name)
+        })
+        .placeholder("Preset…")
+        .text_size(10)
+        .padding([3, 7])
+        .style(theme::picker),
         iced::widget::space::horizontal(),
-        preset_picker,
+        ui::caption(effect.description()),
         move_up,
         move_down,
-        button(text("✕").size(10))
-            .padding([3, 7])
+        button(text("✕").size(9))
+            .padding([2, 6])
             .style(theme::button_danger)
             .on_press(Message::RemoveEffect(host, slot)),
     ]
     .spacing(6)
     .align_y(Alignment::Center);
 
-    // Parameters, grouped the way the effect describes them.
-    let values = effect.kind.params();
-    let groups = row(effect.kind.groups().iter().map(|(name, params)| {
-        let controls = row(params.iter().filter_map(|param| {
-            let (_, value, min, max) = values.iter().copied().find(|(n, _, _, _)| n == param)?;
-            Some(control(
-                host,
-                slot,
-                &effect.kind,
-                param,
-                value,
-                min,
-                max,
-                tint,
-                enabled,
-            ))
+    let controls: Element<'_, Message> = if expanded {
+        let groups = row(effect.kind.groups().iter().map(|(name, params)| {
+            let knobs = row(params.iter().filter_map(|param| {
+                let (_, value, min, max) =
+                    values.iter().copied().find(|(n, _, _, _)| n == param)?;
+                Some(control(
+                    host,
+                    slot,
+                    &effect.kind,
+                    param,
+                    value,
+                    min,
+                    max,
+                    tint,
+                    enabled,
+                ))
+            }))
+            .spacing(8)
+            .align_y(Alignment::Center)
+            .wrap();
+
+            container(column![ui::caption(*name), knobs].spacing(3))
+                .padding([5, 7])
+                .style(theme::well)
+                .into()
         }))
-        .spacing(8)
-        .align_y(Alignment::Center)
+        .spacing(6)
         .wrap();
+        container(groups).padding([4, 6]).into()
+    } else {
+        Space::new().height(Length::Fixed(0.0)).into()
+    };
 
-        container(column![ui::caption(*name), controls].spacing(3))
-            .padding([6, 8])
-            .style(theme::well)
-            .into()
-    }))
-    .spacing(8)
-    .wrap();
-
-    container(column![header, groups].spacing(8))
-        .padding(10)
+    container(column![header, controls].spacing(2))
+        .padding(5)
         .width(Length::Fill)
         .style(if enabled { theme::card } else { theme::panel })
         .into()

@@ -36,18 +36,38 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
         );
     }
 
-    column![
+    let mut layout = column![
         ui::menu::view(app),
         ui::transport::view(app),
         container(body)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding([0, 6]),
-        status_bar(app),
     ]
-    .spacing(4)
-    .padding([6, 0])
-    .into()
+    .spacing(4);
+
+    // The effects rack lives along the bottom, the way LMMS keeps its chain
+    // windows out of the arrangement.
+    if app.settings.show_effects_dock {
+        layout = layout.push(
+            container(ui::effects::dock(app))
+                .height(Length::Fixed(app.settings.effects_dock_height))
+                .padding([0, 6]),
+        );
+    }
+
+    let window = layout.push(status_bar(app)).spacing(4).padding([6, 0]);
+
+    // An open menu is stacked over the whole window rather than placed in the
+    // layout: anything inside the column would push the toolbar down as it
+    // opened, which is what `float` did.
+    match ui::menu::overlay(app) {
+        Some(menu) => iced::widget::stack![window, menu]
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
+        None => window.into(),
+    }
 }
 
 fn wants_instrument_panel(view: MainView) -> bool {
