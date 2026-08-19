@@ -449,7 +449,7 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
                 .direction(scrollable::Direction::Horizontal(
                     scrollable::Scrollbar::new().width(8).scroller_width(8),
                 ))
-                .on_scroll(|viewport| Message::RackScrolled(viewport.relative_offset().x))
+                .on_scroll(|viewport| Message::RackScrolled(viewport.absolute_offset().x))
         ]
         .spacing(6),
     )

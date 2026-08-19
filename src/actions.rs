@@ -16,10 +16,7 @@ impl LimeDaw {
     pub(crate) fn update_action(&mut self, message: Message) -> Task<Message> {
         // Choosing anything from a menu dismisses it. Toggling a menu button is
         // handled below, so it is excluded here.
-        if !matches!(
-            message,
-            Message::ToggleMenu(_) | Message::Tick | Message::Keyboard(_) | Message::McpJob(_)
-        ) {
+        if !is_background(&message) {
             self.open_menu = None;
         }
         match message {
@@ -226,11 +223,17 @@ impl LimeDaw {
             Message::SetRackZoom(width) => {
                 self.rack_zoom = width.clamp(4.0, 64.0);
             }
-            Message::RackScrolled(relative_x) => {
-                // Approaching the right-hand edge adds more bars, so the grid
-                // keeps going for as long as it is scrolled.
-                if relative_x > 0.82 {
-                    self.rack_extra_bars = (self.rack_extra_bars + 8).min(4096);
+            Message::RackScrolled(offset_x) => {
+                // Keep sixteen bars of grid beyond wherever the view has been
+                // scrolled to. Worked out from the absolute offset rather than
+                // grown a step at a time: growing widens the content, which
+                // moves the relative offset, which would fire this again.
+                let bar_width =
+                    (self.project.beats_per_bar() / 0.25) as f32 * self.rack_zoom.max(1.0);
+                let scrolled_bars = (offset_x / bar_width.max(1.0)).ceil().max(0.0) as usize;
+                let wanted = (scrolled_bars + 16).min(4096);
+                if wanted > self.rack_extra_bars {
+                    self.rack_extra_bars = wanted;
                 }
             }
             Message::SetBufferFrames(frames) => {
@@ -1246,6 +1249,32 @@ pub fn render_on_worker(
             Err(_) => Message::ExportFinished(Err("the render was interrupted".into())),
         }
     }
+}
+
+/// Whether a message arrived on its own rather than from someone clicking.
+///
+/// An open menu is dismissed by anything the user does, but not by the frame
+/// tick, a scroll position being reported, or a background task finishing —
+/// those would close it the instant it opened.
+fn is_background(message: &Message) -> bool {
+    matches!(
+        message,
+        Message::Tick
+            | Message::Noop
+            | Message::SystemTheme(_)
+            | Message::Keyboard(_)
+            | Message::McpJob(_)
+            | Message::ToggleMenu(_)
+            | Message::RackScrolled(_)
+            | Message::SetStatus(_)
+            | Message::CopiedNotice(_)
+            | Message::ExportFinished(_)
+            | Message::ProjectSaved(_, _)
+            | Message::ProjectLoaded(_, _)
+            | Message::MidiImported(_)
+            | Message::SampleLoaded(_, _, _)
+            | Message::SoundFontLoaded(_, _)
+    )
 }
 
 /// Show a folder in the platform's file manager.
