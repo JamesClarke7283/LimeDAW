@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>LimeDAW</title>
+    <meta name="color-scheme" content="light dark" />
+    <link data-trunk rel="rust" data-bin="limedaw" data-wasm-opt="0" />
+    <style>
+      :root {
+        --lime-bg: #eff1ec;
+        --lime-fg: #1b2016;
+        --lime-accent: #5c9a0f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --lime-bg: #14171a;
+          --lime-fg: #e6ebe0;
+          --lime-accent: #9bd634;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: var(--lime-bg);
+        color: var(--lime-fg);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        outline: none;
+      }
+      #loading {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.6rem;
+        pointer-events: none;
+        transition: opacity 200ms ease;
+      }
+      #loading.hidden {
+        opacity: 0;
+      }
+      #loading .mark {
+        font-size: 2rem;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+        color: var(--lime-accent);
+      }
+      #loading .note {
+        font-size: 0.85rem;
+        opacity: 0.65;
+      }
+      /* The browser will not start audio until the page is clicked, so say so. */
+      #audio-hint {
+        position: fixed;
+        left: 50%;
+        bottom: 1rem;
+        transform: translateX(-50%);
+        padding: 0.45rem 0.9rem;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        background: color-mix(in srgb, var(--lime-accent) 18%, transparent);
+        border: 1px solid color-mix(in srgb, var(--lime-accent) 45%, transparent);
+        pointer-events: none;
+        transition: opacity 250ms ease;
+      }
+      #audio-hint.hidden {
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">
+      <div class="mark">LimeDAW</div>
+      <div class="note">Loading the workstation…</div>
+    </div>
+    <div id="audio-hint">Click anywhere to enable audio</div>
+    <script>
+      // Trunk swaps in the wasm bundle; hide the splash once a canvas shows up.
+      const splash = document.getElementById("loading");
+      const hint = document.getElementById("audio-hint");
+      const observer = new MutationObserver(() => {
+        if (document.querySelector("canvas")) {
+          splash.classList.add("hidden");
+          setTimeout(() => splash.remove(), 300);
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+      window.addEventListener(
+        "pointerdown",
+        () => {
+          hint.classList.add("hidden");
+          setTimeout(() => hint.remove(), 300);
+        },
+        { once: true },
+      );
+    </script>
+  </body>
+</html>

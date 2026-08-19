@@ -1,0 +1,4 @@
+# getrandom 0.3 needs to be told which backend to use on the web; without this
+# the wasm build fails to link.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
