@@ -80,9 +80,19 @@ mod native {
         config_dir().join("settings.json")
     }
 
-    /// The unix socket the MCP server listens on.
+    /// The local socket (Unix) or per-user named pipe (Windows) for MCP.
     pub fn mcp_socket() -> PathBuf {
-        data_dir().join("mcp.sock")
+        #[cfg(unix)]
+        {
+            data_dir().join("mcp.sock")
+        }
+        #[cfg(windows)]
+        {
+            use std::hash::{DefaultHasher, Hash, Hasher};
+            let mut hash = DefaultHasher::new();
+            data_dir().hash(&mut hash);
+            PathBuf::from(format!(r"\\.\pipe\LimeDAW-{:016x}", hash.finish()))
+        }
     }
 
     /// The MCP server's log, useful when a client can't connect.

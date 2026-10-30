@@ -1,7 +1,7 @@
-//! An MCP server that exposes the whole DAW over a unix socket.
+//! An MCP server that exposes the whole DAW over a local connection.
 //!
 //! The transport is newline-delimited JSON-RPC 2.0 — the same framing MCP uses
-//! over stdio, just carried on a socket so the running app can be driven by any
+//! over stdio, carried on a Unix socket or Windows named pipe so the app can be driven by any
 //! number of clients while it stays open. `limedaw --mcp-stdio` bridges a
 //! client that only knows how to spawn a process onto that socket.
 

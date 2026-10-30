@@ -9,7 +9,7 @@
 set -euo pipefail
 
 target="${1:-HEAD}"
-previous="$(git describe --tags --abbrev=0 "${target}^" 2>/dev/null || true)"
+previous="$(git describe --tags --match 'v[0-9]*' --abbrev=0 "${target}^" 2>/dev/null || true)"
 
 if [ -n "$previous" ]; then
     range="${previous}..${target}"

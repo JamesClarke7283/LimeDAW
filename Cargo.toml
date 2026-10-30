@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "LimeDAW — a pattern-based digital audio workstation"
 license = "GPL-3.0-or-later"
+homepage = "https://github.com/JamesClarke7283/LimeDAW"
+repository = "https://github.com/JamesClarke7283/LimeDAW"
 default-run = "limedaw"
 
 [[bin]]
@@ -65,21 +67,33 @@ and mixer, with a built-in synthesiser, sampler and SoundFont playback, and an \
 MCP server for driving the application programmatically."""
 section = "sound"
 priority = "optional"
-depends = "$auto"
+depends = "$auto, libxkbcommon0, libxkbcommon-x11-0"
 assets = [
     ["target/release/limedaw", "usr/bin/", "755"],
     ["assets/limedaw.desktop", "usr/share/applications/limedaw.desktop", "644"],
     ["assets/limedaw.svg", "usr/share/icons/hicolor/scalable/apps/limedaw.svg", "644"],
     ["assets/limedaw.png", "usr/share/icons/hicolor/256x256/apps/limedaw.png", "644"],
     ["README.md", "usr/share/doc/limedaw/README.md", "644"],
+    ["packaging/linux/dev.limedaw.LimeDAW.metainfo.xml", "usr/share/metainfo/dev.limedaw.LimeDAW.metainfo.xml", "644"],
 ]
 
 [package.metadata.generate-rpm]
+license = "GPL-3.0-or-later"
+summary = "A pattern-based digital audio workstation"
 assets = [
     { source = "target/release/limedaw", dest = "/usr/bin/limedaw", mode = "755" },
     { source = "assets/limedaw.desktop", dest = "/usr/share/applications/limedaw.desktop", mode = "644" },
     { source = "assets/limedaw.svg", dest = "/usr/share/icons/hicolor/scalable/apps/limedaw.svg", mode = "644" },
+    { source = "assets/limedaw.png", dest = "/usr/share/icons/hicolor/256x256/apps/limedaw.png", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/limedaw/README.md", mode = "644", doc = true },
+    { source = "LICENSE", dest = "/usr/share/licenses/limedaw/LICENSE", mode = "644" },
+    { source = "packaging/linux/dev.limedaw.LimeDAW.metainfo.xml", dest = "/usr/share/metainfo/dev.limedaw.LimeDAW.metainfo.xml", mode = "644" },
 ]
+
+# winit loads these at runtime, so automatic ELF dependency scanning misses them.
+[package.metadata.generate-rpm.requires]
+"libxkbcommon.so.0()(64bit)" = "*"
+"libxkbcommon-x11.so.0()(64bit)" = "*"
 
 [profile.release]
 opt-level = 3

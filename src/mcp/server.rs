@@ -1,4 +1,4 @@
-//! The unix-socket MCP server and the stdio bridge that fronts it.
+//! Local MCP over Unix sockets or Windows named pipes, plus a stdio bridge.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -7,12 +7,13 @@ use iced::futures::Stream;
 use iced::futures::channel::{mpsc, oneshot};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 
 use super::{
     Job, Request, Response, initialize_result, resource_definitions, tool_error, tool_result,
     tools::tools_list_json,
 };
+
+mod transport;
 
 /// The environment variable a client can set to point at a different socket.
 pub const SOCKET_ENV: &str = "LIMEDAW_MCP_SOCKET";
@@ -45,35 +46,22 @@ impl ServerHandle {
     /// Bind the socket and start serving. The job channel is installed for
     /// [`job_stream`] to pick up.
     pub fn start(socket_path: PathBuf) -> anyhow::Result<Self> {
-        if let Some(parent) = socket_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        clear_stale_socket(&socket_path)?;
-
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .thread_name("limedaw-mcp")
             .build()?;
 
+        let mut listener = {
+            let _guard = runtime.enter();
+            transport::Listener::bind(&socket_path)?
+        };
         let (job_tx, job_rx) = mpsc::unbounded::<Job>();
         if let Ok(mut slot) = JOB_RX.lock() {
             *slot = Some(job_rx);
         }
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-        let listener = {
-            let _guard = runtime.enter();
-            UnixListener::bind(&socket_path)?
-        };
-
-        // A socket in the user's own data directory; make that explicit.
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
-        }
-
         let path_for_log = socket_path.clone();
         runtime.spawn(async move {
             log::info!("MCP server listening on {}", path_for_log.display());
@@ -82,7 +70,7 @@ impl ServerHandle {
                 tokio::select! {
                     _ = &mut shutdown => break,
                     accepted = listener.accept() => match accepted {
-                        Ok((stream, _)) => {
+                        Ok(stream) => {
                             let tx = job_tx.clone();
                             tokio::spawn(async move {
                                 if let Err(err) = serve_connection(stream, tx).await {
@@ -112,12 +100,14 @@ impl Drop for ServerHandle {
         if let Some(tx) = self.shutdown.take() {
             let _ = tx.send(());
         }
+        #[cfg(unix)]
         let _ = std::fs::remove_file(&self.socket_path);
     }
 }
 
 /// Remove a socket file left behind by a previous run, but never one that a
 /// live server is still listening on.
+#[cfg(unix)]
 fn clear_stale_socket(path: &Path) -> anyhow::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -134,11 +124,11 @@ fn clear_stale_socket(path: &Path) -> anyhow::Result<()> {
     }
 }
 
-async fn serve_connection(
-    stream: UnixStream,
-    jobs: mpsc::UnboundedSender<Job>,
-) -> anyhow::Result<()> {
-    let (reader, mut writer) = stream.into_split();
+async fn serve_connection<S>(stream: S, jobs: mpsc::UnboundedSender<Job>) -> anyhow::Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    let (reader, mut writer) = tokio::io::split(stream);
     let mut lines = BufReader::new(reader).lines();
 
     while let Some(line) = lines.next_line().await? {
@@ -297,7 +287,7 @@ pub fn socket_path() -> PathBuf {
         .unwrap_or_else(crate::paths::mcp_socket)
 }
 
-/// Bridge stdin/stdout onto the unix socket, so MCP clients that only know how
+/// Bridge stdin/stdout onto the local transport, so MCP clients that only know how
 /// to spawn a process can talk to the running app.
 pub fn stdio_bridge() -> anyhow::Result<()> {
     let path = socket_path();
@@ -306,7 +296,7 @@ pub fn stdio_bridge() -> anyhow::Result<()> {
         .build()?;
 
     runtime.block_on(async move {
-        let stream = match UnixStream::connect(&path).await {
+        let stream = match transport::connect(&path).await {
             Ok(stream) => stream,
             Err(err) => {
                 // Answering `initialize` even when the app is closed gives the
@@ -315,7 +305,7 @@ pub fn stdio_bridge() -> anyhow::Result<()> {
             }
         };
 
-        let (socket_reader, mut socket_writer) = stream.into_split();
+        let (socket_reader, mut socket_writer) = tokio::io::split(stream);
         let mut stdin = BufReader::new(tokio::io::stdin()).lines();
         let mut socket_lines = BufReader::new(socket_reader).lines();
         let mut stdout = tokio::io::stdout();
@@ -382,4 +372,60 @@ async fn offline_stub(path: &Path, err: std::io::Error) -> anyhow::Result<()> {
         stdout.flush().await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_transport_supports_multiple_clients_and_rebind() {
+        let id = format!(
+            "limedaw-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        #[cfg(unix)]
+        let path = std::env::temp_dir().join(format!("{id}.sock"));
+        #[cfg(windows)]
+        let path = PathBuf::from(format!(r"\\.\pipe\{id}"));
+        let server = ServerHandle::start(path.clone()).unwrap();
+        assert!(ServerHandle::start(path.clone()).is_err());
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                // Keep the first connection open while accepting a second one.
+                let first = transport::connect(&path).await.unwrap();
+                let second = transport::connect(&path).await.unwrap();
+                for stream in [first, second] {
+                    let (reader, mut writer) = tokio::io::split(stream);
+                    writer
+                        .write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n")
+                        .await
+                        .unwrap();
+                    let reply = BufReader::new(reader)
+                        .lines()
+                        .next_line()
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    let response: Value = serde_json::from_str(&reply).unwrap();
+                    assert_eq!(response["id"], 1);
+                    assert_eq!(response["result"], json!({}));
+                }
+            })
+            .await
+            .expect("local MCP transport timed out");
+        });
+
+        drop(server);
+        let _restarted = ServerHandle::start(path).unwrap();
+    }
 }

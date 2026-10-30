@@ -6,9 +6,11 @@
 # Expects the release binary for that target to be built already, and the WiX
 # CLI on PATH (dotnet tool install --global wix).
 param(
+    [ValidateSet("x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc")]
     [string]$Target = "x86_64-pc-windows-msvc"
 )
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 Set-Location $root
@@ -36,7 +38,7 @@ Write-Host "wrote $portable"
 # WiX wants an RTF licence; wrap the plain text in a minimal one.
 $licenseRtf = "target\LICENSE.rtf"
 $text = (Get-Content LICENSE -Raw) -replace '\\', '\\\\' -replace '{', '\{' -replace '}', '\}'
-$text = $text -replace "`r`n", "\par`r`n" -replace "`n", "\par`n"
+$text = $text -replace '\r?\n', '\par '
 "{\rtf1\ansi\deff0{\fonttbl{\f0\fnil\fcharset0 Courier New;}}\fs16 $text }" |
     Set-Content -Path $licenseRtf -Encoding ASCII
 
@@ -49,7 +51,13 @@ $msi = "dist\LimeDAW-$version-windows-$arch.msi"
     -d "IconPath=$root\assets\limedaw.ico" `
     -d "LicensePath=$root\$licenseRtf" `
     -d "ReadmePath=$root\README.md" `
+    -d "LicenseTextPath=$root\LICENSE" `
     -o $msi
 
 if ($LASTEXITCODE -ne 0) { throw "wix build failed" }
+foreach ($package in @($portable, $msi)) {
+    if (-not (Test-Path $package) -or (Get-Item $package).Length -eq 0) {
+        throw "Missing or empty package: $package"
+    }
+}
 Write-Host "wrote $msi"

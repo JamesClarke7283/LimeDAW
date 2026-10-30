@@ -12,7 +12,6 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     let socket = socket_path();
     let exe = executable_path();
     let config = mcp::client_config_json(&exe, &socket);
-    let socat = mcp::client_config_socat(&socket);
     let command = mcp::cli_command(&exe, &socket);
 
     let running = app.mcp.is_some();
@@ -84,10 +83,10 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
     }))
     .spacing(3);
 
-    column![
+    let panel = column![
         text("Model Context Protocol").size(16),
         ui::caption(
-            "LimeDAW serves MCP over a unix socket, so an assistant can drive the DAW while it is open."
+            "LimeDAW serves MCP over a local connection, so an assistant can drive the DAW while it is open."
         ),
         status,
         config_box(
@@ -95,34 +94,42 @@ pub fn view(app: &LimeDaw) -> Element<'_, Message> {
             "Paste this into your MCP client's config (claude_desktop_config.json, .mcp.json, and friends).",
             config,
         ),
-        config_box(
+    ];
+    #[cfg(not(windows))]
+    let panel = panel.push(config_box(
             "Alternative: socat bridge",
             "If you would rather not point at the LimeDAW binary, bridge the socket with socat instead.",
-            socat,
-        ),
-        config_box(
+            mcp::client_config_socat(&socket),
+        ));
+    panel
+        .push(config_box(
             "Claude Code, one line",
             "Adds the server to Claude Code from a terminal.",
             command,
-        ),
-        container(
-            column![
-                text(format!("{} tools", tools.len())).size(14),
-                ui::caption("Everything the interface can do is reachable from here."),
-                container(scrollable(tool_list).style(theme::scroll).height(Length::Fixed(280.0)))
+        ))
+        .push(
+            container(
+                column![
+                    text(format!("{} tools", tools.len())).size(14),
+                    ui::caption("Everything the interface can do is reachable from here."),
+                    container(
+                        scrollable(tool_list)
+                            .style(theme::scroll)
+                            .height(Length::Fixed(280.0))
+                    )
                     .padding(8)
                     .style(theme::well),
-            ]
-            .spacing(8)
+                ]
+                .spacing(8),
+            )
+            .padding(12)
+            .width(Length::Fill)
+            .style(theme::card),
         )
-        .padding(12)
-        .width(Length::Fill)
-        .style(theme::card),
-    ]
-    .spacing(12)
-    .padding(14)
-    .max_width(900)
-    .into()
+        .spacing(12)
+        .padding(14)
+        .max_width(900)
+        .into()
 }
 
 /// A copyable block of configuration text.
@@ -179,6 +186,11 @@ fn socket_path() -> String {
 fn executable_path() -> String {
     #[cfg(not(target_arch = "wasm32"))]
     {
+        // AppImage mounts are temporary; launch the persistent AppImage file
+        // so MCP clients get the same bundled libraries as the GUI.
+        if let Some(appimage) = std::env::var_os("APPIMAGE") {
+            return appimage.to_string_lossy().into_owned();
+        }
         std::env::current_exe()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| "limedaw".into())

@@ -12,6 +12,34 @@ and exposes the whole application over **MCP** so an assistant can drive it.
 
 ---
 
+## Downloads
+
+Get the newest build from the [nightly release](https://github.com/JamesClarke7283/LimeDAW/releases/tag/nightly),
+or choose a version from [Releases](https://github.com/JamesClarke7283/LimeDAW/releases).
+Every successful build of a commit pushed to `main` updates the `nightly` tag and
+its prerelease assets.
+
+| Platform | Downloads | Architectures |
+| --- | --- | --- |
+| Linux | AppImage, DEB, RPM, portable tar.gz | x86_64, ARM64 |
+| Windows | MSI installer, portable ZIP | x64, ARM64 |
+| macOS | DMG containing LimeDAW.app | Intel, Apple silicon |
+
+On Linux, make the AppImage executable (`chmod +x LimeDAW-*.AppImage`) and run it.
+If FUSE is unavailable, run it with `--appimage-extract-and-run`. DEB packages
+can be installed with `sudo apt install ./LimeDAW-*.deb`; RPM packages with
+`sudo dnf install ./LimeDAW-*.rpm`. Install only the package for your architecture.
+Linux release builds use Ubuntu 22.04 (glibc 2.35); a working desktop and audio
+service are required. The tarball uses the host's shared libraries.
+
+On Windows, run the MSI or extract the ZIP and launch `limedaw.exe`. On macOS,
+open the DMG and drag LimeDAW into Applications. Windows packages are unsigned;
+macOS bundles are ad-hoc signed but not notarized, so platform security prompts
+may require explicitly allowing the app. Nightlies are development builds.
+
+`SHA256SUMS` accompanies each release. See [packaging instructions](packaging/README.md)
+for local builds and CI details.
+
 ## Running it
 
 ```bash
@@ -155,8 +183,9 @@ The choice is applied at start-up. `ICED_BACKEND=wgpu` or
 
 ## The MCP server
 
-While LimeDAW is open it serves [Model Context Protocol][mcp] over a unix
-socket at `~/.local/share/LimeDAW/mcp.sock`. Everything the interface can do —
+While LimeDAW is open it serves [Model Context Protocol][mcp] over a Unix
+socket on Linux/macOS, or a per-user named pipe on Windows. The Linux socket
+is at `~/.local/share/LimeDAW/mcp.sock`. Everything the interface can do —
 creating channels, writing notes, arranging clips, mixing, automating,
 rendering — is reachable as a tool.
 
@@ -178,7 +207,7 @@ button. It looks like this:
 `--mcp-stdio` is a thin bridge: MCP clients spawn a process and talk over
 stdin/stdout, so the bridge forwards that to the socket the running app is
 listening on. If you would rather not point at the binary, `socat` works too
-(the app shows that variant as well).
+(the app shows that variant on Unix platforms as well).
 
 A session usually starts with `get_state`, which reports the tempo, transport,
 channels, patterns and clips that exist. From there:

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.limedaw.LimeDAW</id>
+  <name>LimeDAW</name>
+  <summary>Write, arrange and mix music</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>A pattern-based digital audio workstation with a channel rack, piano roll,
+    playlist and mixer, built-in synthesis and sampling, SoundFont playback,
+    and an MCP server for driving the application programmatically.</p>
+  </description>
+  <launchable type="desktop-id">limedaw.desktop</launchable>
+  <url type="homepage">https://github.com/JamesClarke7283/LimeDAW</url>
+  <provides><binary>limedaw</binary></provides>
+  <content_rating type="oars-1.1" />
+</component>
