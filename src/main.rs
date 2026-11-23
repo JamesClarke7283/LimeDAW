@@ -37,7 +37,32 @@ fn main() -> iced::Result {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    configure_fontconfig();
+
     limedaw::run()
+}
+
+#[cfg(target_os = "linux")]
+fn configure_fontconfig() {
+    use std::env;
+
+    // iced's font loader reads FONTCONFIG_FILE but skips FONTCONFIG_PATH,
+    // which Guix uses to locate its system font configuration.
+    if env::var_os("FONTCONFIG_FILE").is_some() {
+        return;
+    }
+    let Some(paths) = env::var_os("FONTCONFIG_PATH") else {
+        return;
+    };
+    if let Some(config) = env::split_paths(&paths)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .map(|dir| dir.join("fonts.conf"))
+        .find(|config| config.is_file())
+    {
+        // SAFETY: this runs in main before LimeDAW starts any threads.
+        unsafe { env::set_var("FONTCONFIG_FILE", config) };
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
